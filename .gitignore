@@ -1,0 +1,21 @@
+# Common binary paths
+/bin/
+/openfga-sync
+/cmd/openfga-sync/openfga-sync
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Editor temp files
+*.swp
+
+# Go workspace file
+go.work
+go.work.sum
+
+# env file
+.env
+.envrc

@@ -1,0 +1,131 @@
+# Example openfga-sync configuration.
+daemon:
+  # How often to run a synchronization pass.
+  interval: 15m
+
+  # Where to keep track of the tuples written by openfga-sync
+  # (one file per store). Unused in authoritative mode.
+  state_dir: /var/lib/openfga-sync
+
+sources:
+  # AD/LDAP source.
+  #
+  # All groups below group_base_dn are pulled and their names matched
+  # against the role patterns. Group members are resolved to a user
+  # name used as the OpenFGA user name.
+  - name: corp-ad
+    type: ldap
+    ldap:
+      # The domain is used to discover the LDAP servers through the AD
+      # DNS SRV records. Alternatively a specific server can be set
+      # with e.g. url: ldaps://ad.example.com
+      domain: example.com
+      # start_tls: true              # For ldap:// URLs.
+      # insecure_skip_verify: false
+      # ca_certificate: /etc/openfga-sync/ad-ca.pem
+      bind_dn: CN=openfga-sync,OU=Services,DC=example,DC=com
+      bind_password: secret
+      group_base_dn: OU=Incus,DC=example,DC=com
+      # group_filter: (objectClass=group)
+      # group_name_attribute: cn
+      # member_attribute: member
+      # By default the user name is derived from the member DN itself
+      # (first RDN value, e.g. the CN, which for AD is expected to line
+      # up with the sAMAccountName), keeping the queries to a minimum.
+      # Setting user_attribute instead resolves each member entry to
+      # that attribute, at the cost of one query per user, e.g. for
+      # OIDC logins where Incus identifies users by e-mail address:
+      # user_attribute: mail
+
+      # Apply the grants of the roles below to the members of the
+      # matching groups.
+      sync_roles: true
+
+      # Fill in the membership of the OpenFGA groups that were granted
+      # access in the stores by a third party, keeping them aligned
+      # with the matching LDAP groups.
+      # sync_groups: true
+
+      roles:
+        # Membership of an app-XXX-admin group grants "operator" on
+        # project:app-XXX-stg and "viewer" on project:app-XXX-prod on
+        # all Incus deployments.
+        - pattern: "^app-(?P<app>.+)-admin$"
+          grants:
+            - relation: operator
+              object: "project:app-${app}-stg"
+            - relation: viewer
+              object: "project:app-${app}-prod"
+
+        # Capture groups can be used in the relation too:
+        # app-1234-stg-viewer => "viewer" on project:app-1234-stg
+        - pattern: "^(?P<project>.+)-(?P<role>viewer|operator)$"
+          grants:
+            - relation: "${role}"
+              object: "project:${project}"
+
+        # Grants can be scoped to other applications and to specific
+        # deployments (target names). The object then defaults to the
+        # application's server object (here server:migration-manager).
+        - pattern: "^migration-admin$"
+          grants:
+            - relation: admin
+              type: migration-manager
+              targets: [migration-manager01]
+
+  # Rauthy source.
+  #
+  # Roles matching role_pattern are pulled and their JSON metadata read
+  # for OpenFGA grants, keyed by application type, either global to all
+  # deployments of that type or specific to some (by target name):
+  #   {"openfga": {
+  #       "incus": {
+  #           "global": [{"relation": "user", "object": "project:app-1234-stg"}],
+  #           "specific": {"cl001": [{"relation": "admin"}]}
+  #       },
+  #       "operations-center": {"global": [{"relation": "viewer"}]}
+  #   }}
+  # Grants without an object default to the application's server object
+  # (e.g. server:incus). Every enabled user holding the role gets the
+  # grants applied, using their e-mail address as the OpenFGA user name.
+  - name: sso
+    type: rauthy
+    rauthy:
+      url: https://sso.example.com
+      # The API key needs read access to roles, users and groups.
+      api_key: openfga-sync$secret
+      role_pattern: "^incus/"
+      # insecure_skip_verify: false
+      # ca_certificate: /etc/openfga-sync/sso-ca.pem
+
+      # Apply the grants defined in the metadata of the matching roles
+      # to every user holding them.
+      sync_roles: true
+
+      # Fill in the membership of the OpenFGA groups that were granted
+      # access in the stores by a third party, keeping them aligned
+      # with the matching Rauthy groups.
+      # sync_groups: true
+
+# The shared OpenFGA instance hosting one store per application
+# deployment. The stores to synchronize are discovered automatically
+# based on the "TYPE_NAME" store naming convention, e.g. "incus_cl001"
+# for the Incus deployment named "cl001" or
+# "operations-center_operations-center01" for the Operations Center
+# deployment named "operations-center01". Other stores are ignored.
+openfga:
+  url: http://openfga.example.com:8080
+  api_token: secret
+  # insecure_skip_verify: false
+
+  # When true, openfga-sync owns all the user permission tuples in the
+  # stores: anything not matching the configured sources gets deleted,
+  # including tuples added by hand. When false (the default), only the
+  # tuples openfga-sync created itself (tracked in state_dir) are ever
+  # deleted.
+  # authoritative: false
+
+  # When true, only push tuples whose objects exist in the store (based
+  # on the object tuples maintained by Incus). Tuples for missing
+  # objects are skipped until a later pass where the objects showed up.
+  # skip_missing_objects: false

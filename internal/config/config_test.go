@@ -1,0 +1,213 @@
+package config
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"go.yaml.in/yaml/v4"
+)
+
+func writeConfig(t *testing.T, content string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "config.yml")
+
+	err := os.WriteFile(path, []byte(content), 0o600)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	return path
+}
+
+func TestLoad(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, `
+daemon:
+  interval: 5m
+
+sources:
+  - name: corp-ad
+    type: ldap
+    ldap:
+      url: ldaps://ad.example.com
+      bind_dn: CN=svc,DC=example,DC=com
+      bind_password: secret
+      group_base_dn: OU=Incus,DC=example,DC=com
+      sync_roles: true
+      roles:
+        - pattern: "^(.+)-admin$"
+          grants:
+            - relation: user
+
+  - name: sso
+    type: rauthy
+    rauthy:
+      url: https://sso.example.com
+      api_key: name$secret
+      role_pattern: "^incus-"
+      sync_roles: true
+
+openfga:
+  url: http://127.0.0.1:8080
+  api_token: token1
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if time.Duration(cfg.Daemon.Interval) != 5*time.Minute {
+		t.Errorf("Unexpected interval: %v", cfg.Daemon.Interval)
+	}
+
+	if cfg.Daemon.StateDir != "/var/lib/openfga-sync" {
+		t.Errorf("Unexpected state directory: %q", cfg.Daemon.StateDir)
+	}
+
+	if cfg.OpenFGA.Authoritative {
+		t.Error("Expected authoritative mode to be disabled by default")
+	}
+
+	if cfg.OpenFGA.SkipMissingObjects {
+		t.Error("Expected skip_missing_objects to default to false")
+	}
+
+	ldap := cfg.Sources[0].LDAP
+	if ldap.GroupFilter != "(objectClass=group)" || ldap.GroupNameAttribute != "cn" || ldap.MemberAttribute != "member" {
+		t.Errorf("Unexpected LDAP defaults: %+v", ldap)
+	}
+
+	if ldap.Roles[0].Grants[0].Object != "project:${1}" {
+		t.Errorf("Unexpected grant object default: %q", ldap.Roles[0].Grants[0].Object)
+	}
+}
+
+func TestJSON(t *testing.T) {
+	t.Parallel()
+
+	content := `{
+  "daemon": {"interval": "5m", "state_dir": "/tmp/state"},
+  "sources": [
+    {"name": "sso", "type": "rauthy", "rauthy": {"url": "https://sso.example.com", "api_key": "key", "role_pattern": "^incus/", "sync_roles": true}}
+  ],
+  "openfga": {"url": "http://127.0.0.1:8080", "api_token": "secret", "authoritative": true, "skip_missing_objects": true}
+}`
+
+	cfg := &Config{}
+
+	err := json.Unmarshal([]byte(content), cfg)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if time.Duration(cfg.Daemon.Interval) != 5*time.Minute {
+		t.Errorf("Unexpected interval: %v", cfg.Daemon.Interval)
+	}
+
+	if cfg.Sources[0].Rauthy == nil || cfg.Sources[0].Rauthy.URL != "https://sso.example.com" {
+		t.Errorf("Unexpected source: %+v", cfg.Sources[0])
+	}
+
+	if !cfg.OpenFGA.Authoritative || !cfg.OpenFGA.SkipMissingObjects {
+		t.Errorf("Unexpected OpenFGA options: %+v", cfg.OpenFGA)
+	}
+
+	// The duration serializes back to its string form.
+	serialized, err := json.Marshal(cfg.Daemon)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if !strings.Contains(string(serialized), `"interval":"5m0s"`) {
+		t.Errorf("Unexpected serialized daemon config: %s", serialized)
+	}
+
+	// The YAML form (as written back by IncusOS) keeps the string form too.
+	serializedYAML, err := yaml.Marshal(cfg.Daemon)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if !strings.Contains(string(serializedYAML), "interval: 5m0s") {
+		t.Errorf("Unexpected serialized daemon config: %s", serializedYAML)
+	}
+}
+
+func TestLoadInvalid(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"no sources": `
+openfga:
+  url: http://127.0.0.1:8080
+`,
+		"no rauthy sync mode": `
+sources:
+  - name: sso
+    type: rauthy
+    rauthy:
+      url: https://sso.example.com
+      api_key: key
+openfga:
+  url: http://127.0.0.1:8080
+`,
+		"no openfga": `
+sources:
+  - name: sso
+    type: rauthy
+    rauthy:
+      url: https://sso.example.com
+      api_key: key
+      sync_roles: true
+`,
+		"bad source type": `
+sources:
+  - name: foo
+    type: unknown
+openfga:
+  url: http://127.0.0.1:8080
+`,
+
+		"bad role pattern": `
+sources:
+  - name: corp-ad
+    type: ldap
+    ldap:
+      url: ldaps://ad.example.com
+      group_base_dn: OU=Incus,DC=example,DC=com
+      sync_roles: true
+      roles:
+        - pattern: "(["
+          grants:
+            - relation: user
+openfga:
+  url: http://127.0.0.1:8080
+`,
+		"ldap url and domain": `
+sources:
+  - name: corp-ad
+    type: ldap
+    ldap:
+      url: ldaps://ad.example.com
+      domain: example.com
+      group_base_dn: OU=Incus,DC=example,DC=com
+      sync_groups: true
+openfga:
+  url: http://127.0.0.1:8080
+`,
+	}
+
+	for name, content := range cases {
+		_, err := Load(writeConfig(t, content))
+		if err == nil {
+			t.Errorf("Expected an error for %q", name)
+		}
+	}
+}
