@@ -14,8 +14,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/FuturFusion/openfga-sync/internal/config"
 	"github.com/FuturFusion/openfga-sync/internal/syncer"
+	"github.com/FuturFusion/openfga-sync/shared/config"
 )
 
 // Rauthy is a Rauthy data source.

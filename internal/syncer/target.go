@@ -14,7 +14,7 @@ import (
 	"github.com/openfga/go-sdk/client"
 	"github.com/openfga/go-sdk/credentials"
 
-	"github.com/FuturFusion/openfga-sync/internal/config"
+	"github.com/FuturFusion/openfga-sync/shared/config"
 )
 
 // Instance wraps the OpenFGA instance hosting the stores to synchronize.

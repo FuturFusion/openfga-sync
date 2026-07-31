@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/FuturFusion/openfga-sync/internal/config"
+	"github.com/FuturFusion/openfga-sync/shared/config"
 )
 
 // Grant is a desired tuple scoped to a type of application and optionally

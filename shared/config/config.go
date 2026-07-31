@@ -260,7 +260,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}
 
-	err = cfg.validate()
+	err = cfg.Validate()
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,8 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-func (c *Config) validate() error {
+// Validate checks the configuration and applies the defaults.
+func (c *Config) Validate() error {
 	// Apply the daemon defaults.
 	if c.Daemon.Interval <= 0 {
 		c.Daemon.Interval = Duration(15 * time.Minute)

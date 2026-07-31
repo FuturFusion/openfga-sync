@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 
-	"github.com/FuturFusion/openfga-sync/internal/config"
+	"github.com/FuturFusion/openfga-sync/shared/config"
 )
 
 func TestMapGroup(t *testing.T) {

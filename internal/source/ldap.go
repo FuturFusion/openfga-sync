@@ -17,8 +17,8 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 
-	"github.com/FuturFusion/openfga-sync/internal/config"
 	"github.com/FuturFusion/openfga-sync/internal/syncer"
+	"github.com/FuturFusion/openfga-sync/shared/config"
 )
 
 // LDAP is an AD/LDAP data source.

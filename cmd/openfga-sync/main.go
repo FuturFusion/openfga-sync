@@ -12,10 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/FuturFusion/openfga-sync/internal/config"
 	"github.com/FuturFusion/openfga-sync/internal/source"
 	"github.com/FuturFusion/openfga-sync/internal/syncer"
 	"github.com/FuturFusion/openfga-sync/internal/version"
+	"github.com/FuturFusion/openfga-sync/shared/config"
 )
 
 type cmdDaemon struct {
