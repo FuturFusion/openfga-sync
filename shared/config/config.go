@@ -81,10 +81,11 @@ type Daemon struct {
 
 // Source is the configuration of a single data source.
 type Source struct {
-	Name   string        `json:"name"             yaml:"name"`
-	Type   string        `json:"type"             yaml:"type"`
-	LDAP   *LDAPSource   `json:"ldap,omitempty"   yaml:"ldap,omitempty"`
-	Rauthy *RauthySource `json:"rauthy,omitempty" yaml:"rauthy,omitempty"`
+	Name    string         `json:"name"              yaml:"name"`
+	Type    string         `json:"type"              yaml:"type"`
+	LDAP    *LDAPSource    `json:"ldap,omitempty"    yaml:"ldap,omitempty"`
+	Rauthy  *RauthySource  `json:"rauthy,omitempty"  yaml:"rauthy,omitempty"`
+	Zitadel *ZitadelSource `json:"zitadel,omitempty" yaml:"zitadel,omitempty"`
 }
 
 // LDAPSource is the configuration of an AD/LDAP data source.
@@ -141,21 +142,21 @@ type LDAPSource struct {
 	SyncGroups bool `json:"sync_groups" yaml:"sync_groups"`
 
 	// Roles translate group names into sets of OpenFGA grants.
-	Roles []LDAPRole `json:"roles" yaml:"roles"`
+	Roles []Role `json:"roles" yaml:"roles"`
 }
 
-// LDAPRole maps a group name pattern to a set of OpenFGA grants, applied
-// to every member of the matching groups.
-type LDAPRole struct {
-	// Pattern is a regular expression matched against the group name.
+// Role maps a name pattern (LDAP group name, Zitadel role key) to a set of
+// OpenFGA grants, applied to every user holding the matching roles.
+type Role struct {
+	// Pattern is a regular expression matched against the name.
 	Pattern string `json:"pattern" yaml:"pattern"`
 
 	// Grants are the grants held by the role.
-	Grants []LDAPGrant `json:"grants" yaml:"grants"`
+	Grants []RoleGrant `json:"grants" yaml:"grants"`
 }
 
-// LDAPGrant is a single grant defined by a role.
-type LDAPGrant struct {
+// RoleGrant is a single grant defined by a role.
+type RoleGrant struct {
 	// Relation is the OpenFGA relation to grant. Capture groups from
 	// the role pattern can be referenced as ${1} or ${name}.
 	Relation string `json:"relation" yaml:"relation"`
@@ -204,6 +205,39 @@ type RauthySource struct {
 	// "member" tuples from the matching Rauthy groups. This requires
 	// reading all the tuples of every store on each pass.
 	SyncGroups bool `json:"sync_groups" yaml:"sync_groups"`
+}
+
+// ZitadelSource is the configuration of a Zitadel data source.
+type ZitadelSource struct {
+	// URL of the Zitadel instance.
+	URL string `json:"url" yaml:"url"`
+
+	// APIToken is the personal access token of a Zitadel service user
+	// with permission to read authorizations (user.grant.read).
+	APIToken string `json:"api_token" yaml:"api_token"`
+
+	// InsecureSkipVerify disables the server certificate validation.
+	InsecureSkipVerify bool `json:"insecure_skip_verify" yaml:"insecure_skip_verify"`
+
+	// CACertificate is the path to a PEM file used to validate the server certificate.
+	CACertificate string `json:"ca_certificate" yaml:"ca_certificate"`
+
+	// ProjectID restricts the synchronization to the role assignments of
+	// a single Zitadel project. When empty, all projects are considered.
+	ProjectID string `json:"project_id" yaml:"project_id"`
+
+	// UserField selects the value used as the OpenFGA user name:
+	// "email" (the default, needs one extra query per user),
+	// "login_name" (the preferred login name) or "id" (the user ID,
+	// matching the OIDC subject).
+	UserField string `json:"user_field" yaml:"user_field"`
+
+	// SyncRoles applies the grants of the roles below to the users
+	// holding the matching Zitadel roles.
+	SyncRoles bool `json:"sync_roles" yaml:"sync_roles"`
+
+	// Roles translate Zitadel role keys into sets of OpenFGA grants.
+	Roles []Role `json:"roles" yaml:"roles"`
 }
 
 // ApplicationKinds are the types of applications a target can be.
@@ -320,6 +354,16 @@ func (c *Config) Validate() error {
 				return err
 			}
 
+		case "zitadel":
+			if src.Zitadel == nil {
+				return fmt.Errorf("source %q is missing its \"zitadel\" section", src.Name)
+			}
+
+			err := src.Zitadel.validate(src.Name)
+			if err != nil {
+				return err
+			}
+
 		default:
 			return fmt.Errorf("source %q has unsupported type %q", src.Name, src.Type)
 		}
@@ -367,8 +411,13 @@ func (l *LDAPSource) validate(name string) error {
 		return fmt.Errorf("source %q has no roles", name)
 	}
 
-	for i := range l.Roles {
-		role := &l.Roles[i]
+	return validateRoles(name, l.Roles)
+}
+
+// validateRoles checks a role list and applies the grant defaults.
+func validateRoles(name string, roles []Role) error {
+	for i := range roles {
+		role := &roles[i]
 
 		if role.Pattern == "" {
 			return fmt.Errorf("source %q has a role without a pattern", name)
@@ -432,4 +481,32 @@ func (r *RauthySource) validate(name string) error {
 	}
 
 	return nil
+}
+
+func (z *ZitadelSource) validate(name string) error {
+	if z.URL == "" {
+		return fmt.Errorf("source %q is missing its URL", name)
+	}
+
+	if z.APIToken == "" {
+		return fmt.Errorf("source %q is missing its API token", name)
+	}
+
+	if z.UserField == "" {
+		z.UserField = "email"
+	}
+
+	if !slices.Contains([]string{"email", "login_name", "id"}, z.UserField) {
+		return fmt.Errorf("source %q has unsupported user field %q", name, z.UserField)
+	}
+
+	if !z.SyncRoles {
+		return fmt.Errorf("source %q must enable sync_roles", name)
+	}
+
+	if len(z.Roles) == 0 {
+		return fmt.Errorf("source %q has no roles", name)
+	}
+
+	return validateRoles(name, z.Roles)
 }

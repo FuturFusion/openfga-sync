@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -40,58 +39,10 @@ func (l *LDAP) Name() string {
 	return l.name
 }
 
-// ldapRole is a compiled role definition.
-type ldapRole struct {
-	pattern *regexp.Regexp
-	grants  []config.LDAPGrant
-}
-
 // ldapGroup is a group with its resolved member names.
 type ldapGroup struct {
 	name    string
 	members []string
-}
-
-// compileRoles compiles the configured role patterns.
-func compileRoles(cfgs []config.LDAPRole) ([]ldapRole, error) {
-	roles := make([]ldapRole, 0, len(cfgs))
-	for _, role := range cfgs {
-		pattern, err := regexp.Compile(role.Pattern)
-		if err != nil {
-			return nil, fmt.Errorf("invalid pattern %q: %w", role.Pattern, err)
-		}
-
-		roles = append(roles, ldapRole{pattern: pattern, grants: role.Grants})
-	}
-
-	return roles, nil
-}
-
-// mapGroup returns the grants of the roles matching a group name, with the
-// user left empty. Capture groups from the role pattern can be referenced
-// in both the relation and the object templates.
-func mapGroup(roles []ldapRole, groupName string) []syncer.Grant {
-	grants := []syncer.Grant{}
-
-	for _, role := range roles {
-		match := role.pattern.FindStringSubmatchIndex(groupName)
-		if match == nil {
-			continue
-		}
-
-		for _, grant := range role.grants {
-			grants = append(grants, syncer.Grant{
-				Tuple: syncer.Tuple{
-					Relation: string(role.pattern.ExpandString(nil, grant.Relation, groupName, match)),
-					Object:   string(role.pattern.ExpandString(nil, grant.Object, groupName, match)),
-				},
-				Kind:    grant.Type,
-				Targets: grant.Targets,
-			})
-		}
-	}
-
-	return grants
 }
 
 // Grants pulls the groups below the configured base DN and turns their
@@ -105,7 +56,7 @@ func (l *LDAP) Grants(ctx context.Context) ([]syncer.Grant, error) {
 	roleGrants := map[string][]syncer.Grant{}
 
 	groups, err := l.fetchGroups(ctx, func(groupName string) bool {
-		grants := mapGroup(roles, groupName)
+		grants := mapName(roles, groupName)
 		if len(grants) == 0 {
 			slog.Debug("Group doesn't match any role", slog.String("source", l.name), slog.String("group", groupName))
 

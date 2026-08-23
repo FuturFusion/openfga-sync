@@ -53,6 +53,17 @@ sources:
       role_pattern: "^incus-"
       sync_roles: true
 
+  - name: idp
+    type: zitadel
+    zitadel:
+      url: https://idp.example.com
+      api_token: pat1
+      sync_roles: true
+      roles:
+        - pattern: "^(.+)-admin$"
+          grants:
+            - relation: admin
+
 openfga:
   url: http://127.0.0.1:8080
   api_token: token1
@@ -86,6 +97,11 @@ openfga:
 
 	if ldap.Roles[0].Grants[0].Object != "project:${1}" {
 		t.Errorf("Unexpected grant object default: %q", ldap.Roles[0].Grants[0].Object)
+	}
+
+	zitadel := cfg.Sources[2].Zitadel
+	if zitadel.UserField != "email" {
+		t.Errorf("Unexpected user field default: %q", zitadel.UserField)
 	}
 }
 
@@ -199,6 +215,33 @@ sources:
       domain: example.com
       group_base_dn: OU=Incus,DC=example,DC=com
       sync_groups: true
+openfga:
+  url: http://127.0.0.1:8080
+`,
+		"zitadel no roles": `
+sources:
+  - name: idp
+    type: zitadel
+    zitadel:
+      url: https://idp.example.com
+      api_token: pat
+      sync_roles: true
+openfga:
+  url: http://127.0.0.1:8080
+`,
+		"zitadel bad user field": `
+sources:
+  - name: idp
+    type: zitadel
+    zitadel:
+      url: https://idp.example.com
+      api_token: pat
+      user_field: username
+      sync_roles: true
+      roles:
+        - pattern: "^(.+)-admin$"
+          grants:
+            - relation: admin
 openfga:
   url: http://127.0.0.1:8080
 `,

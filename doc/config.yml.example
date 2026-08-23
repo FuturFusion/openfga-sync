@@ -107,6 +107,49 @@ sources:
       # with the matching Rauthy groups.
       # sync_groups: true
 
+  # Zitadel source.
+  #
+  # The active project role assignments (authorizations) are pulled and
+  # the role keys matched against the role patterns, the same way the
+  # LDAP source matches group names.
+  - name: idp
+    type: zitadel
+    zitadel:
+      url: https://idp.example.com
+      # Personal access token of a service user with the
+      # user.grant.read permission.
+      api_token: secret
+      # insecure_skip_verify: false
+      # ca_certificate: /etc/openfga-sync/idp-ca.pem
+
+      # Only consider the role assignments of a single Zitadel project.
+      # project_id: "326102453042806786"
+
+      # Value used as the OpenFGA user name: "email" (the default, one
+      # extra query per user), "login_name" (the preferred login name)
+      # or "id" (the user ID, matching the OIDC sub claim). It must
+      # line up with what Incus sees at authentication time.
+      # user_field: email
+
+      # Apply the grants of the roles below to the users holding the
+      # matching Zitadel roles.
+      sync_roles: true
+
+      roles:
+        # Holders of an app-XXX-admin role get "operator" on
+        # project:app-XXX on all Incus deployments.
+        - pattern: "^app-(?P<app>.+)-admin$"
+          grants:
+            - relation: operator
+              object: "project:app-${app}"
+
+        # Instance specific grant, scoped to a single deployment.
+        - pattern: "^cl001-web-vm01-user$"
+          grants:
+            - relation: user
+              object: "instance:web/vm01"
+              targets: [cl001]
+
 # The shared OpenFGA instance hosting one store per application
 # deployment. The stores to synchronize are discovered automatically
 # based on the "TYPE_NAME" store naming convention, e.g. "incus_cl001"

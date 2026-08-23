@@ -78,6 +78,28 @@ Environments are expected to use one mechanism or the other: either the
 roles carry the full policy, or the policy is managed externally and only
 the group membership is filled in from Rauthy.
 
+## Zitadel
+With `sync_roles: true`, the active project role assignments
+(authorizations) are pulled from [Zitadel](https://zitadel.com) (v4 or
+newer, for its v2 authorization API) and the role keys matched against the
+same kind of role pattern list as the LDAP source, applying the grants of
+the matching roles to every user holding them. Zitadel roles can't carry
+metadata, so the grants live in the `openfga-sync` configuration rather
+than in the identity provider.
+
+The synchronization can be restricted to the roles of a single Zitadel
+project with `project_id`, and `user_field` selects the value used as the
+OpenFGA user name: the user's e-mail address (the default, at the cost of
+one query per user), their preferred login name or their user ID (matching
+the OIDC `sub` claim). It must line up with what Incus sees at
+authentication time.
+
+The API is accessed with the personal access token of a service user
+holding a role that includes the `user.grant.read` permission.
+
+Zitadel doesn't support user groups in current releases, so there is no
+`sync_groups` mode for this source yet.
+
 # Targets
 All the applications share a single OpenFGA instance, with one store per
 application deployment (an Incus server or cluster, an Operations Center

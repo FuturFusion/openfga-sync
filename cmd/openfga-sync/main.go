@@ -35,8 +35,8 @@ func main() {
   Synchronize identity providers with Incus OpenFGA stores
 
   This daemon pulls group and role information from a number of data
-  sources (AD/LDAP, Rauthy) and converts it into OpenFGA relationship
-  tuples on the OpenFGA stores used by Incus clusters.
+  sources (AD/LDAP, Rauthy, Zitadel) and converts it into OpenFGA
+  relationship tuples on the OpenFGA stores used by Incus clusters.
 `
 	app.RunE = daemonCmd.run
 	app.SilenceUsage = true
@@ -169,6 +169,14 @@ func (c *cmdDaemon) load() (*syncer.Engine, time.Duration, error) {
 			if src.Rauthy.SyncGroups {
 				engine.Resolvers = append(engine.Resolvers, rauthy)
 			}
+
+		case "zitadel":
+			zitadel, err := source.NewZitadel(src.Name, src.Zitadel)
+			if err != nil {
+				return nil, 0, err
+			}
+
+			engine.Sources = append(engine.Sources, zitadel)
 
 		default:
 			return nil, 0, fmt.Errorf("unsupported source type %q", src.Type)

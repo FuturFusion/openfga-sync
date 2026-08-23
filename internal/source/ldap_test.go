@@ -10,15 +10,15 @@ import (
 	"github.com/FuturFusion/openfga-sync/shared/config"
 )
 
-func TestMapGroup(t *testing.T) {
+func TestMapName(t *testing.T) {
 	t.Parallel()
 
-	roles, err := compileRoles([]config.LDAPRole{
-		{Pattern: "^app-(?P<app>.+)-admin$", Grants: []config.LDAPGrant{
+	roles, err := compileRoles([]config.Role{
+		{Pattern: "^app-(?P<app>.+)-admin$", Grants: []config.RoleGrant{
 			{Relation: "operator", Object: "project:app-${app}-stg", Type: "incus"},
 			{Relation: "viewer", Object: "project:app-${app}-prod", Type: "incus"},
 		}},
-		{Pattern: "^(?P<project>.+)-(?P<role>viewer)$", Grants: []config.LDAPGrant{
+		{Pattern: "^(?P<project>.+)-(?P<role>viewer)$", Grants: []config.RoleGrant{
 			{Relation: "${role}", Object: "project:${project}", Type: "incus", Targets: []string{"cl001"}},
 		}},
 	})
@@ -27,7 +27,7 @@ func TestMapGroup(t *testing.T) {
 	}
 
 	// A single group grants multiple tuples through one role.
-	grants := mapGroup(roles, "app-1234-admin")
+	grants := mapName(roles, "app-1234-admin")
 	if len(grants) != 2 {
 		t.Fatalf("Unexpected grants: %+v", grants)
 	}
@@ -44,7 +44,7 @@ func TestMapGroup(t *testing.T) {
 		t.Errorf("Unexpected grant scope: %+v", grants[0])
 	}
 
-	grants = mapGroup(roles, "app-1234-stg-viewer")
+	grants = mapName(roles, "app-1234-stg-viewer")
 	if len(grants) != 1 || grants[0].Relation != "viewer" || grants[0].Object != "project:app-1234-stg" {
 		t.Errorf("Unexpected grants: %+v", grants)
 	}
@@ -53,7 +53,7 @@ func TestMapGroup(t *testing.T) {
 		t.Errorf("Unexpected grant scope: %+v", grants[0])
 	}
 
-	grants = mapGroup(roles, "unrelated-group")
+	grants = mapName(roles, "unrelated-group")
 	if len(grants) != 0 {
 		t.Errorf("Unexpected grants: %+v", grants)
 	}
@@ -144,7 +144,7 @@ func TestMembers(t *testing.T) {
 func TestCompileRolesInvalid(t *testing.T) {
 	t.Parallel()
 
-	_, err := compileRoles([]config.LDAPRole{{Pattern: "([", Grants: []config.LDAPGrant{{Relation: "user"}}}})
+	_, err := compileRoles([]config.Role{{Pattern: "([", Grants: []config.RoleGrant{{Relation: "user"}}}})
 	if err == nil {
 		t.Error("Expected an error")
 	}
