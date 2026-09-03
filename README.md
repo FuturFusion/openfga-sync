@@ -12,8 +12,9 @@ projects exist.
 Multiple sources can be active at the same time, their grants are merged.
 
 ## AD/LDAP
-The LDAP servers can either be set explicitly through a URL or discovered
-automatically from the AD DNS SRV records of a domain.
+The LDAP servers can either be set explicitly through a list of URLs
+(tried in order) or discovered automatically from the AD DNS SRV records
+of a domain.
 
 With `sync_roles: true`, all groups below a configurable base DN are
 pulled and their names matched against a list of roles. Each role is a

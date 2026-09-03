@@ -17,8 +17,10 @@ sources:
     type: ldap
     ldap:
       # The domain is used to discover the LDAP servers through the AD
-      # DNS SRV records. Alternatively a specific server can be set
-      # with e.g. url: ldaps://ad.example.com
+      # DNS SRV records. Alternatively specific servers can be set,
+      # tried in order until one accepts the connection:
+      # url: ldaps://ad.example.com
+      # urls: [ldaps://ad01.example.com, ldaps://ad02.example.com]
       domain: example.com
       # start_tls: true              # For ldap:// URLs.
       # insecure_skip_verify: false

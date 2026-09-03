@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,7 @@ sources:
     type: ldap
     ldap:
       url: ldaps://ad.example.com
+      urls: [ldaps://ad02.example.com]
       bind_dn: CN=svc,DC=example,DC=com
       bind_password: secret
       group_base_dn: OU=Incus,DC=example,DC=com
@@ -91,6 +93,10 @@ openfga:
 	}
 
 	ldap := cfg.Sources[0].LDAP
+	if !reflect.DeepEqual(ldap.URLs, []string{"ldaps://ad.example.com", "ldaps://ad02.example.com"}) {
+		t.Errorf("Unexpected LDAP URLs: %v", ldap.URLs)
+	}
+
 	if ldap.GroupFilter != "(objectClass=group)" || ldap.GroupNameAttribute != "cn" || ldap.MemberAttribute != "member" {
 		t.Errorf("Unexpected LDAP defaults: %+v", ldap)
 	}
@@ -213,6 +219,17 @@ sources:
     ldap:
       url: ldaps://ad.example.com
       domain: example.com
+      group_base_dn: OU=Incus,DC=example,DC=com
+      sync_groups: true
+openfga:
+  url: http://127.0.0.1:8080
+`,
+		"ldap bad url scheme": `
+sources:
+  - name: corp-ad
+    type: ldap
+    ldap:
+      urls: [ldaps://ad01.example.com, https://ad02.example.com]
       group_base_dn: OU=Incus,DC=example,DC=com
       sync_groups: true
 openfga:

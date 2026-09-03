@@ -178,9 +178,9 @@ func (l *LDAP) fetchGroups(ctx context.Context, filter func(string) bool) ([]lda
 // connect establishes the LDAP connection and performs the initial bind,
 // discovering the servers through DNS when no URL is configured.
 func (l *LDAP) connect(ctx context.Context) (*ldap.Conn, error) {
-	urls := []string{l.cfg.URL}
+	urls := l.cfg.URLs
 
-	if l.cfg.URL == "" {
+	if len(urls) == 0 {
 		var err error
 
 		urls, err = l.discover(ctx)

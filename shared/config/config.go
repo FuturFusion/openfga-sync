@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"slices"
@@ -90,9 +91,14 @@ type Source struct {
 
 // LDAPSource is the configuration of an AD/LDAP data source.
 type LDAPSource struct {
-	// URL of the server (ldap://, ldaps://). When empty, the servers
-	// are discovered through the AD DNS SRV records of Domain.
+	// URL of the server (ldap://, ldaps://), shortcut for a single
+	// entry in URLs.
 	URL string `json:"url" yaml:"url"`
+
+	// URLs of the servers, tried in order until one accepts the
+	// connection. When empty, the servers are discovered through the
+	// AD DNS SRV records of Domain.
+	URLs []string `json:"urls" yaml:"urls"`
 
 	// Domain is the AD DNS domain used to discover the LDAP servers
 	// when no URL is set.
@@ -378,12 +384,29 @@ func (c *Config) Validate() error {
 }
 
 func (l *LDAPSource) validate(name string) error {
-	if l.URL == "" && l.Domain == "" {
+	// Fold the single URL into the list.
+	if l.URL != "" {
+		l.URLs = append([]string{l.URL}, l.URLs...)
+		l.URL = ""
+	}
+
+	if len(l.URLs) == 0 && l.Domain == "" {
 		return fmt.Errorf("source %q needs either a URL or a domain", name)
 	}
 
-	if l.URL != "" && l.Domain != "" {
+	if len(l.URLs) > 0 && l.Domain != "" {
 		return fmt.Errorf("source %q can't have both a URL and a domain", name)
+	}
+
+	for _, serverURL := range l.URLs {
+		parsed, err := url.Parse(serverURL)
+		if err != nil {
+			return fmt.Errorf("source %q has an invalid URL %q: %w", name, serverURL, err)
+		}
+
+		if parsed.Scheme != "ldap" && parsed.Scheme != "ldaps" {
+			return fmt.Errorf("source %q has an invalid URL %q: unsupported scheme", name, serverURL)
+		}
 	}
 
 	if l.GroupBaseDN == "" {
