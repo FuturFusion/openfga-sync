@@ -29,6 +29,10 @@ sources:
       bind_password: secret
       group_base_dn: OU=Incus,DC=example,DC=com
       # group_filter: (objectClass=group)
+      # Only consider the groups whose name matches this pattern. In
+      # authoritative mode, the membership of the other groups is left
+      # alone.
+      # group_pattern: "^incus-"
       # group_name_attribute: cn
       # member_attribute: member
       # By default the user name is derived from the member DN itself
@@ -97,6 +101,10 @@ sources:
       # The API key needs read access to roles, users and groups.
       api_key: openfga-sync$secret
       role_pattern: "^incus/"
+      # Only consider the groups whose name matches this pattern. In
+      # authoritative mode, the membership of the other groups is left
+      # alone.
+      # group_pattern: "^incus-"
       # insecure_skip_verify: false
       # ca_certificate: /etc/openfga-sync/sso-ca.pem
 

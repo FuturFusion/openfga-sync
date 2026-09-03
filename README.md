@@ -33,6 +33,10 @@ the OpenFGA groups that were granted access in the stores by a third
 party, keeping them aligned with the matching LDAP groups (same behavior
 as the Rauthy version below).
 
+The groups considered can be restricted by name with `group_pattern`, a
+regular expression. Groups not matching are ignored entirely, including
+in authoritative mode where their membership is left alone.
+
 To keep the number of queries to a minimum, group members aren't looked up
 individually by default: the user name is derived directly from the member
 DN (its first RDN value, which for AD is expected to line up with the
@@ -73,7 +77,8 @@ instead: each store is scanned for permission tuples granted to groups
 (`group:NAME#member`, typically added by a third party), and the `member`
 tuples of every such OpenFGA group are then kept aligned with the matching
 Rauthy group, adding and removing members as they join and leave the group
-in Rauthy. The group grants themselves are never touched.
+in Rauthy. The group grants themselves are never touched. As with LDAP,
+`group_pattern` restricts the groups considered by name.
 
 Environments are expected to use one mechanism or the other: either the
 roles carry the full policy, or the policy is managed externally and only
@@ -130,15 +135,18 @@ manually are never touched. In steady state no OpenFGA write traffic is
 generated at all, and the state files are only rewritten when something
 actually changed.
 
-With `authoritative: true`, `openfga-sync` instead owns all the user
-tuples (`user:NAME`) in the stores: on every pass, each store's tuples are
+With `authoritative: true`, `openfga-sync` instead owns the user tuples
+(`user:NAME`) within its scope: on every pass, each store's tuples are
 read back and anything not matching the configured sources is deleted,
 including tuples added by hand (the `user:*` wildcard used for
-authenticated access is left alone). Tuples granted to groups
-(`group:NAME#member`) are never owned, so combining this with
-`sync_groups` makes `openfga-sync` authoritative over the group
-memberships while a third party keeps managing the group grants. No local
-state is kept in this mode.
+authenticated access is left alone). The scope follows the configured
+synchronization modes: the permission tuples are owned when a source has
+`sync_roles` enabled, the group memberships (`member` on `group:NAME`)
+when a source has `sync_groups` enabled, restricted to the groups
+matching its `group_pattern` if any. Tuples granted to groups
+(`group:NAME#member`) are never owned, so a third party can keep managing
+the group grants while `openfga-sync` is authoritative over the
+memberships. No local state is kept in this mode.
 
 # Usage
 The daemon runs a synchronization pass at a configurable interval:

@@ -63,6 +63,21 @@ func groupReference(user string) (string, bool) {
 	return unescape(name), true
 }
 
+// groupMembership returns the group a tuple makes its user a member of, if
+// any (the "member" relation on a "group:NAME" object).
+func groupMembership(t Tuple) (string, bool) {
+	if t.Relation != "member" {
+		return "", false
+	}
+
+	name, ok := strings.CutPrefix(t.Object, "group:")
+	if !ok {
+		return "", false
+	}
+
+	return unescape(name), true
+}
+
 // objectType returns the type part of an OpenFGA object.
 func objectType(object string) string {
 	t, _, _ := strings.Cut(object, ":")

@@ -45,9 +45,10 @@ import (
 // fill in the members of OpenFGA groups that were granted access by a
 // third party.
 type Rauthy struct {
-	name   string
-	cfg    *config.RauthySource
-	client *http.Client
+	name         string
+	cfg          *config.RauthySource
+	client       *http.Client
+	groupPattern *regexp.Regexp
 }
 
 // rauthyRole is the role record returned by the Rauthy API.
@@ -86,6 +87,11 @@ type rauthyApp struct {
 
 // NewRauthy creates a new Rauthy source from its configuration.
 func NewRauthy(name string, cfg *config.RauthySource) (*Rauthy, error) {
+	groupPattern, err := compileGroupPattern(cfg.GroupPattern)
+	if err != nil {
+		return nil, err
+	}
+
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: cfg.InsecureSkipVerify, //nolint:gosec // Explicit configuration option.
 	}
@@ -112,12 +118,18 @@ func NewRauthy(name string, cfg *config.RauthySource) (*Rauthy, error) {
 				TLSClientConfig: tlsConfig,
 			},
 		},
+		groupPattern: groupPattern,
 	}, nil
 }
 
 // Name returns the source name.
 func (r *Rauthy) Name() string {
 	return r.name
+}
+
+// ManagesGroup reports whether a group falls within the source's scope.
+func (r *Rauthy) ManagesGroup(name string) bool {
+	return matchGroup(r.groupPattern, name)
 }
 
 // Grants pulls the roles and users from Rauthy and turns the role metadata
@@ -210,7 +222,12 @@ func (r *Rauthy) Groups(ctx context.Context) (map[string][]string, error) {
 	}
 
 	membership := map[string][]string{}
+
 	for _, group := range groups {
+		if !r.ManagesGroup(group.Name) {
+			continue
+		}
+
 		membership[group.Name] = []string{}
 	}
 

@@ -28,6 +28,10 @@ type GroupResolver interface {
 	// Groups returns the membership of all the known groups, as a map
 	// of group name to the user names of its members.
 	Groups(ctx context.Context) (map[string][]string, error)
+
+	// ManagesGroup reports whether a group falls within the resolver's
+	// scope. Groups outside of it are left alone.
+	ManagesGroup(name string) bool
 }
 
 // Engine drives the synchronization of all sources into all stores.
@@ -38,10 +42,12 @@ type Engine struct {
 	State     *State
 	DryRun    bool
 
-	// Authoritative makes openfga-sync the owner of all user permission
-	// tuples: instead of tracking its own tuples in the state files, it
-	// compares the desired grants with all the user tuples present in
-	// each store and deletes anything unexpected.
+	// Authoritative makes openfga-sync the owner of the user tuples in
+	// its scope: instead of tracking its own tuples in the state files,
+	// it compares the desired tuples with those present in each store
+	// and deletes anything unexpected. The scope covers the permission
+	// tuples when sources are configured and the membership of the
+	// groups managed by the resolvers.
 	Authoritative bool
 
 	// SkipMissingObjects only pushes tuples whose objects exist in the
@@ -180,6 +186,12 @@ func (e *Engine) syncTarget(ctx context.Context, target *Target, grants []Grant,
 		}
 
 		for _, group := range groups {
+			if !e.managesGroup(group) {
+				slog.Debug("Skipping group outside of scope", slog.String("store", target.StoreName()), slog.String("group", group))
+
+				continue
+			}
+
 			members, ok := membership[group]
 			if !ok {
 				slog.Warn("Store grants access to an unknown group", slog.String("store", target.StoreName()), slog.String("group", group))
@@ -194,18 +206,19 @@ func (e *Engine) syncTarget(ctx context.Context, target *Target, grants []Grant,
 	}
 
 	// Get the set of tuples we're reconciling against. In authoritative
-	// mode that's every user permission tuple present in the store, so
-	// anything unexpected gets deleted. Otherwise it's the record of the
-	// tuples openfga-sync itself wrote, so other tuples are never touched.
+	// mode that's every user tuple present in the store and within our
+	// scope, so anything unexpected gets deleted. Otherwise it's the
+	// record of the tuples openfga-sync itself wrote, so other tuples
+	// are never touched.
 	var managed map[Tuple]bool
 
 	if e.Authoritative {
-		var err error
-
-		managed, err = target.UserTuples(ctx)
+		current, err := target.UserTuples(ctx)
 		if err != nil {
 			return err
 		}
+
+		managed = e.authoritativeScope(current)
 	} else {
 		managed = map[Tuple]bool{}
 		for _, tuple := range e.State.Targets[target.StoreName()] {
@@ -244,6 +257,42 @@ func (e *Engine) syncTarget(ctx context.Context, target *Target, grants []Grant,
 	slog.Info("Synchronized store", slog.String("store", target.StoreName()), slog.Int("writes", len(appliedWrites)), slog.Int("deletes", len(appliedDeletes)))
 
 	return applyErr
+}
+
+// managesGroup reports whether any resolver manages the group.
+func (e *Engine) managesGroup(name string) bool {
+	for _, resolver := range e.Resolvers {
+		if resolver.ManagesGroup(name) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// authoritativeScope narrows the user tuples of a store down to those
+// owned in authoritative mode: group memberships are owned for the groups
+// managed by the resolvers, permission tuples only when sources provide
+// grants.
+func (e *Engine) authoritativeScope(current map[Tuple]bool) map[Tuple]bool {
+	managed := map[Tuple]bool{}
+
+	for tuple := range current {
+		group, ok := groupMembership(tuple)
+		if ok {
+			if e.managesGroup(group) {
+				managed[tuple] = true
+			}
+
+			continue
+		}
+
+		if len(e.Sources) > 0 {
+			managed[tuple] = true
+		}
+	}
+
+	return managed
 }
 
 // objectExists checks whether the object referenced by a tuple exists on the

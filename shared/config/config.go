@@ -123,6 +123,11 @@ type LDAPSource struct {
 	// GroupFilter is the LDAP filter used to select the groups.
 	GroupFilter string `json:"group_filter" yaml:"group_filter"`
 
+	// GroupPattern is a regular expression restricting the groups
+	// considered by their name. Groups not matching are ignored and, in
+	// authoritative mode, their membership is left alone.
+	GroupPattern string `json:"group_pattern" yaml:"group_pattern"`
+
 	// GroupNameAttribute is the attribute holding the group name.
 	GroupNameAttribute string `json:"group_name_attribute" yaml:"group_name_attribute"`
 
@@ -200,6 +205,11 @@ type RauthySource struct {
 
 	// RolePattern is a regular expression used to select the relevant roles.
 	RolePattern string `json:"role_pattern" yaml:"role_pattern"`
+
+	// GroupPattern is a regular expression restricting the groups
+	// considered by their name. Groups not matching are ignored and, in
+	// authoritative mode, their membership is left alone.
+	GroupPattern string `json:"group_pattern" yaml:"group_pattern"`
 
 	// SyncRoles pulls the roles matching RolePattern and applies the
 	// OpenFGA grants defined in their metadata to every user holding
@@ -426,6 +436,11 @@ func (l *LDAPSource) validate(name string) error {
 		l.MemberAttribute = "member"
 	}
 
+	err := validateGroupPattern(name, l.GroupPattern)
+	if err != nil {
+		return err
+	}
+
 	if !l.SyncRoles && !l.SyncGroups {
 		return fmt.Errorf("source %q must enable at least one of sync_roles and sync_groups", name)
 	}
@@ -435,6 +450,20 @@ func (l *LDAPSource) validate(name string) error {
 	}
 
 	return validateRoles(name, l.Roles)
+}
+
+// validateGroupPattern checks the group pattern of a source, if any.
+func validateGroupPattern(name string, pattern string) error {
+	if pattern == "" {
+		return nil
+	}
+
+	_, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("source %q has an invalid group pattern %q: %w", name, pattern, err)
+	}
+
+	return nil
 }
 
 // validateRoles checks a role list and applies the grant defaults.
@@ -497,6 +526,11 @@ func (r *RauthySource) validate(name string) error {
 		if err != nil {
 			return fmt.Errorf("source %q has an invalid role pattern %q: %w", name, r.RolePattern, err)
 		}
+	}
+
+	err := validateGroupPattern(name, r.GroupPattern)
+	if err != nil {
+		return err
 	}
 
 	if !r.SyncRoles && !r.SyncGroups {

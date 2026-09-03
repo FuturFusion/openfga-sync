@@ -224,6 +224,18 @@ sources:
 openfga:
   url: http://127.0.0.1:8080
 `,
+		"ldap bad group pattern": `
+sources:
+  - name: corp-ad
+    type: ldap
+    ldap:
+      url: ldaps://ad.example.com
+      group_base_dn: OU=Incus,DC=example,DC=com
+      group_pattern: "(["
+      sync_groups: true
+openfga:
+  url: http://127.0.0.1:8080
+`,
 		"ldap bad url scheme": `
 sources:
   - name: corp-ad

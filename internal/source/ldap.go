@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -22,21 +23,33 @@ import (
 
 // LDAP is an AD/LDAP data source.
 type LDAP struct {
-	name string
-	cfg  *config.LDAPSource
+	name         string
+	cfg          *config.LDAPSource
+	groupPattern *regexp.Regexp
 }
 
 // NewLDAP creates a new LDAP source from its configuration.
-func NewLDAP(name string, cfg *config.LDAPSource) *LDAP {
-	return &LDAP{
-		name: name,
-		cfg:  cfg,
+func NewLDAP(name string, cfg *config.LDAPSource) (*LDAP, error) {
+	groupPattern, err := compileGroupPattern(cfg.GroupPattern)
+	if err != nil {
+		return nil, err
 	}
+
+	return &LDAP{
+		name:         name,
+		cfg:          cfg,
+		groupPattern: groupPattern,
+	}, nil
 }
 
 // Name returns the source name.
 func (l *LDAP) Name() string {
 	return l.name
+}
+
+// ManagesGroup reports whether a group falls within the source's scope.
+func (l *LDAP) ManagesGroup(name string) bool {
+	return matchGroup(l.groupPattern, name)
 }
 
 // ldapGroup is a group with its resolved member names.
@@ -138,7 +151,7 @@ func (l *LDAP) fetchGroups(ctx context.Context, filter func(string) bool) ([]lda
 		}
 
 		groupName := entry.GetAttributeValue(l.cfg.GroupNameAttribute)
-		if groupName == "" {
+		if groupName == "" || !l.ManagesGroup(groupName) {
 			continue
 		}
 

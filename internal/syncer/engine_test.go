@@ -1,7 +1,9 @@
 package syncer
 
 import (
+	"context"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -45,6 +47,48 @@ func TestComputeChangesAuthoritative(t *testing.T) {
 
 	if !reflect.DeepEqual(deletes, []Tuple{manual}) {
 		t.Errorf("Unexpected deletes: %v", deletes)
+	}
+}
+
+type fakeResolver struct {
+	prefix string
+}
+
+func (*fakeResolver) Name() string {
+	return "fake"
+}
+
+func (*fakeResolver) Groups(_ context.Context) (map[string][]string, error) {
+	return map[string][]string{}, nil
+}
+
+func (r *fakeResolver) ManagesGroup(name string) bool {
+	return strings.HasPrefix(name, r.prefix)
+}
+
+func TestAuthoritativeScope(t *testing.T) {
+	t.Parallel()
+
+	grant := Tuple{User: "user:alice@example.com", Relation: "admin", Object: "server:incus"}
+	owned := Tuple{User: "user:alice@example.com", Relation: "member", Object: "group:nsec-admins"}
+	foreign := Tuple{User: "user:bob@example.com", Relation: "member", Object: "group:other"}
+	current := map[Tuple]bool{grant: true, owned: true, foreign: true}
+
+	// Group resolver only: memberships of the matching groups are owned,
+	// permission tuples are left alone.
+	engine := &Engine{Resolvers: []GroupResolver{&fakeResolver{prefix: "nsec-"}}}
+
+	managed := engine.authoritativeScope(current)
+	if !reflect.DeepEqual(managed, map[Tuple]bool{owned: true}) {
+		t.Errorf("Unexpected managed tuples: %v", managed)
+	}
+
+	// Grant sources only: permission tuples are owned, memberships aren't.
+	engine = &Engine{Sources: []Source{nil}}
+
+	managed = engine.authoritativeScope(current)
+	if !reflect.DeepEqual(managed, map[Tuple]bool{grant: true}) {
+		t.Errorf("Unexpected managed tuples: %v", managed)
 	}
 }
 

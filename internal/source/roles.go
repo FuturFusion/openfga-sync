@@ -8,6 +8,26 @@ import (
 	"github.com/FuturFusion/openfga-sync/shared/config"
 )
 
+// compileGroupPattern compiles the optional group pattern of a source.
+func compileGroupPattern(pattern string) (*regexp.Regexp, error) {
+	if pattern == "" {
+		return nil, nil //nolint:nilnil // No pattern means no restriction.
+	}
+
+	compiled, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid group pattern %q: %w", pattern, err)
+	}
+
+	return compiled, nil
+}
+
+// matchGroup reports whether a group name falls within the pattern (any
+// group when nil).
+func matchGroup(pattern *regexp.Regexp, name string) bool {
+	return pattern == nil || pattern.MatchString(name)
+}
+
 // compiledRole is a compiled role definition.
 type compiledRole struct {
 	pattern *regexp.Regexp

@@ -114,7 +114,10 @@ func TestRangeEnd(t *testing.T) {
 func TestMembers(t *testing.T) {
 	t.Parallel()
 
-	src := NewLDAP("test", &config.LDAPSource{MemberAttribute: "member"})
+	src, err := NewLDAP("test", &config.LDAPSource{MemberAttribute: "member"})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 
 	// Small group, all members in the plain attribute.
 	members, err := src.members(nil, "CN=g1,DC=example,DC=com", []*ldap.EntryAttribute{

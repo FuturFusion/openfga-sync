@@ -146,7 +146,10 @@ func (c *cmdDaemon) load() (*syncer.Engine, time.Duration, error) {
 
 		switch src.Type {
 		case "ldap":
-			ldap := source.NewLDAP(src.Name, src.LDAP)
+			ldap, err := source.NewLDAP(src.Name, src.LDAP)
+			if err != nil {
+				return nil, 0, err
+			}
 
 			if src.LDAP.SyncRoles {
 				engine.Sources = append(engine.Sources, ldap)
