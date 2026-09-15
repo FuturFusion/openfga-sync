@@ -45,6 +45,7 @@ sources:
       group_base_dn: OU=Incus,DC=example,DC=com
       user_transforms: [lower]
       role_transforms: [lower]
+      nested_groups: true
       sync_roles: true
       roles:
         - pattern: "^(.+)-admin$"
@@ -105,11 +106,11 @@ openfga:
 		t.Errorf("Unexpected LDAP URLs: %v", ldap.URLs)
 	}
 
-	if ldap.GroupFilter != "(objectClass=group)" || ldap.GroupNameAttribute != "cn" || ldap.MemberAttribute != "member" {
+	if ldap.GroupFilter != "(objectClass=group)" || ldap.GroupNameAttribute != "cn" || ldap.MemberAttribute != "member" || ldap.PageSize != 1000 {
 		t.Errorf("Unexpected LDAP defaults: %+v", ldap)
 	}
 
-	if !reflect.DeepEqual(ldap.UserTransforms, []string{"lower"}) || !reflect.DeepEqual(ldap.RoleTransforms, []string{"lower"}) {
+	if !reflect.DeepEqual(ldap.UserTransforms, []string{"lower"}) || !reflect.DeepEqual(ldap.RoleTransforms, []string{"lower"}) || !ldap.NestedGroups {
 		t.Errorf("Unexpected LDAP options: %+v", ldap)
 	}
 
@@ -268,6 +269,18 @@ sources:
       url: ldaps://ad.example.com
       group_base_dn: OU=Incus,DC=example,DC=com
       role_transforms: [title]
+      sync_groups: true
+openfga:
+  url: http://127.0.0.1:8080
+`,
+		"ldap bad page size": `
+sources:
+  - name: corp-ad
+    type: ldap
+    ldap:
+      url: ldaps://ad.example.com
+      group_base_dn: OU=Incus,DC=example,DC=com
+      page_size: -1
       sync_groups: true
 openfga:
   url: http://127.0.0.1:8080

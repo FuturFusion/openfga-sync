@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -125,33 +126,30 @@ func (l *LDAP) fetchGroups(ctx context.Context, filter func(string) bool) ([]lda
 
 	defer conn.Close()
 
-	// Pull all the groups.
-	req := ldap.NewSearchRequest(
-		l.cfg.GroupBaseDN,
-		ldap.ScopeWholeSubtree,
-		ldap.NeverDerefAliases,
-		0, 0, false,
-		l.cfg.GroupFilter,
-		[]string{l.cfg.GroupNameAttribute, l.cfg.MemberAttribute},
-		nil,
-	)
-
-	result, err := conn.SearchWithPaging(req, 1000)
+	entries, err := l.searchGroups(ctx, conn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search for groups: %w", err)
+		return nil, err
 	}
 
+	resolver := l.newMemberResolver(conn, entries)
 	groups := []ldapGroup{}
-	userCache := map[string]string{}
 
-	for _, entry := range result.Entries {
+	for _, entry := range entries {
 		err := ctx.Err()
 		if err != nil {
 			return nil, err
 		}
 
-		groupName := entry.GetAttributeValue(l.cfg.GroupNameAttribute)
-		if groupName == "" || !l.ManagesGroup(groupName) {
+		groupName := applyTransforms(l.cfg.RoleTransforms, entry.GetAttributeValue(l.cfg.GroupNameAttribute))
+		if groupName == "" {
+			slog.Debug("Skipping group without a name", slog.String("source", l.name), slog.String("dn", entry.DN))
+
+			continue
+		}
+
+		if !l.ManagesGroup(groupName) {
+			slog.Debug("Skipping group outside of scope", slog.String("source", l.name), slog.String("group", groupName))
+
 			continue
 		}
 
@@ -159,33 +157,74 @@ func (l *LDAP) fetchGroups(ctx context.Context, filter func(string) bool) ([]lda
 			continue
 		}
 
-		// Resolve the members.
-		members, err := l.members(conn, entry.DN, entry.Attributes)
+		members, err := resolver.expand(groupName, entry)
 		if err != nil {
 			return nil, err
 		}
 
-		group := ldapGroup{name: groupName, members: []string{}}
+		slog.Debug("Resolved group members", slog.String("source", l.name), slog.String("group", groupName), slog.Int("count", len(members)))
 
-		for _, member := range members {
-			userName, err := l.resolveMember(conn, member, userCache)
-			if err != nil {
-				return nil, err
-			}
-
-			if userName == "" {
-				slog.Warn("Skipping unresolvable group member", slog.String("source", l.name), slog.String("group", groupName), slog.String("member", member))
-
-				continue
-			}
-
-			group.members = append(group.members, userName)
-		}
-
-		groups = append(groups, group)
+		groups = append(groups, ldapGroup{name: groupName, members: members})
 	}
 
 	return groups, nil
+}
+
+// searchGroups returns all the group entries below the configured base DN,
+// pulling them page by page.
+func (l *LDAP) searchGroups(ctx context.Context, conn *ldap.Conn) ([]*ldap.Entry, error) {
+	paging := ldap.NewControlPaging(uint32(l.cfg.PageSize)) //nolint:gosec // Validated to be positive.
+
+	req := ldap.NewSearchRequest(
+		l.cfg.GroupBaseDN,
+		ldap.ScopeWholeSubtree,
+		ldap.NeverDerefAliases,
+		0, 0, false,
+		l.cfg.GroupFilter,
+		[]string{l.cfg.GroupNameAttribute, l.cfg.MemberAttribute},
+		[]ldap.Control{paging},
+	)
+
+	entries := []*ldap.Entry{}
+
+	for page := 1; ; page++ {
+		err := ctx.Err()
+		if err != nil {
+			return nil, err
+		}
+
+		result, err := conn.Search(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to search for groups (page %d): %w", page, err)
+		}
+
+		entries = append(entries, result.Entries...)
+
+		slog.Debug("Fetched group page", slog.String("source", l.name), slog.Int("page", page), slog.Int("entries", len(result.Entries)), slog.Int("total", len(entries)))
+
+		// Referrals point at entries held by other servers (e.g. other
+		// AD domains of the forest), those aren't followed.
+		for _, referral := range result.Referrals {
+			slog.Debug("Ignoring search referral", slog.String("source", l.name), slog.String("referral", referral))
+		}
+
+		control, ok := ldap.FindControl(result.Controls, ldap.ControlTypePaging).(*ldap.ControlPaging)
+		if !ok {
+			slog.Debug("Server returned no paging control", slog.String("source", l.name))
+
+			break
+		}
+
+		if len(control.Cookie) == 0 {
+			break
+		}
+
+		paging.SetCookie(control.Cookie)
+	}
+
+	slog.Debug("Fetched groups", slog.String("source", l.name), slog.Int("count", len(entries)))
+
+	return entries, nil
 }
 
 // connect establishes the LDAP connection and performs the initial bind,
@@ -401,51 +440,202 @@ func memberName(member string) string {
 	return dn.RDNs[0].Attributes[0].Value
 }
 
-// resolveMember turns a group member value into a user name.
-func (l *LDAP) resolveMember(conn *ldap.Conn, member string, cache map[string]string) (string, error) {
-	// Without a user attribute, the user name is derived from the member
-	// value itself, avoiding any extra query.
-	if l.cfg.UserAttribute == "" {
-		return memberName(member), nil
+// groupClasses are the object classes identifying a group entry.
+var groupClasses = []string{"group", "groupofnames", "groupofuniquenames", "groupofentries", "posixgroup"}
+
+// isGroup reports whether an entry is a group, based on its object classes.
+func isGroup(entry *ldap.Entry) bool {
+	for _, class := range entry.GetAttributeValues("objectClass") {
+		if slices.Contains(groupClasses, strings.ToLower(class)) {
+			return true
+		}
 	}
 
-	userName, ok := cache[member]
+	return false
+}
+
+// ldapMember is a resolved group member: either a user name (empty when
+// unresolvable) or a nested group.
+type ldapMember struct {
+	user  string
+	group *ldap.Entry
+}
+
+// memberResolver turns group member values into user names, following the
+// groups nested into other groups.
+type memberResolver struct {
+	src  *LDAP
+	conn *ldap.Conn
+
+	// groups holds the entries of the group search, keyed by DN.
+	groups map[string]*ldap.Entry
+
+	// cache holds the members already looked up, keyed by value.
+	cache map[string]ldapMember
+}
+
+// newMemberResolver creates a resolver aware of the groups returned by the
+// group search.
+func (l *LDAP) newMemberResolver(conn *ldap.Conn, entries []*ldap.Entry) *memberResolver {
+	groups := make(map[string]*ldap.Entry, len(entries))
+	for _, entry := range entries {
+		groups[strings.ToLower(entry.DN)] = entry
+	}
+
+	return &memberResolver{
+		src:    l,
+		conn:   conn,
+		groups: groups,
+		cache:  map[string]ldapMember{},
+	}
+}
+
+// expand returns the user names of all the members of a group, including
+// those reached through nested groups. Each user is listed once.
+func (r *memberResolver) expand(groupName string, group *ldap.Entry) ([]string, error) {
+	visited := map[string]bool{strings.ToLower(group.DN): true}
+	seen := map[string]bool{}
+	users := []string{}
+
+	var walk func(entry *ldap.Entry) error
+
+	walk = func(entry *ldap.Entry) error {
+		members, err := r.src.members(r.conn, entry.DN, entry.Attributes)
+		if err != nil {
+			return err
+		}
+
+		for _, member := range members {
+			resolved, err := r.resolve(member)
+			if err != nil {
+				return err
+			}
+
+			if resolved.group != nil {
+				key := strings.ToLower(resolved.group.DN)
+				if visited[key] {
+					continue
+				}
+
+				visited[key] = true
+
+				slog.Debug("Following nested group", slog.String("source", r.src.name), slog.String("group", groupName), slog.String("nested", resolved.group.DN))
+
+				err := walk(resolved.group)
+				if err != nil {
+					return err
+				}
+
+				continue
+			}
+
+			if resolved.user == "" {
+				slog.Warn("Skipping unresolvable group member", slog.String("source", r.src.name), slog.String("group", groupName), slog.String("member", member))
+
+				continue
+			}
+
+			userName := applyTransforms(r.src.cfg.UserTransforms, resolved.user)
+			if seen[userName] {
+				continue
+			}
+
+			seen[userName] = true
+			users = append(users, userName)
+		}
+
+		return nil
+	}
+
+	err := walk(group)
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
+// resolve turns a member value into a user name or a nested group.
+func (r *memberResolver) resolve(member string) (ldapMember, error) {
+	// Groups below the base DN are known from the group search.
+	group, ok := r.groups[strings.ToLower(member)]
 	if ok {
-		return userName, nil
+		return ldapMember{group: group}, nil
 	}
 
-	// The member value is a DN, look up the target entry.
+	// Without a lookup, the user name is derived from the member value
+	// itself, avoiding any extra query.
+	if r.src.cfg.UserAttribute == "" && !r.src.cfg.NestedGroups {
+		return ldapMember{user: memberName(member)}, nil
+	}
+
+	resolved, ok := r.cache[member]
+	if ok {
+		return resolved, nil
+	}
+
+	resolved, err := r.lookup(member)
+	if err != nil {
+		return ldapMember{}, err
+	}
+
+	r.cache[member] = resolved
+
+	return resolved, nil
+}
+
+// lookup fetches the entry a member DN points at, to tell groups from users
+// and read the user attribute.
+func (r *memberResolver) lookup(member string) (ldapMember, error) {
+	attrs := []string{"objectClass", r.src.cfg.MemberAttribute}
+	if r.src.cfg.UserAttribute != "" {
+		attrs = append(attrs, r.src.cfg.UserAttribute)
+	}
+
 	req := ldap.NewSearchRequest(
 		member,
 		ldap.ScopeBaseObject,
 		ldap.NeverDerefAliases,
 		1, 0, false,
 		"(objectClass=*)",
-		[]string{l.cfg.UserAttribute},
+		attrs,
 		nil,
 	)
 
-	result, err := conn.Search(req)
+	result, err := r.conn.Search(req)
 	if err != nil {
-		// Skip entries that are gone or that we can't access.
-		if ldap.IsErrorAnyOf(err, ldap.LDAPResultNoSuchObject, ldap.LDAPResultInsufficientAccessRights) {
-			cache[member] = ""
-
-			return "", nil
+		// Entries that are gone, that we can't access or that live on
+		// another server can't be told apart from users, so their name
+		// is derived from the DN when no user attribute is needed.
+		if ldap.IsErrorAnyOf(err, ldap.LDAPResultNoSuchObject, ldap.LDAPResultInsufficientAccessRights, ldap.LDAPResultReferral) {
+			return r.fallback(member), nil
 		}
 
-		return "", fmt.Errorf("failed to resolve member %q: %w", member, err)
+		return ldapMember{}, fmt.Errorf("failed to resolve member %q: %w", member, err)
 	}
 
 	if len(result.Entries) != 1 {
-		cache[member] = ""
-
-		return "", nil
+		return r.fallback(member), nil
 	}
 
-	userName = result.Entries[0].GetAttributeValue(l.cfg.UserAttribute)
-	userName = strings.TrimSpace(userName)
-	cache[member] = userName
+	entry := result.Entries[0]
+	if isGroup(entry) {
+		return ldapMember{group: entry}, nil
+	}
 
-	return userName, nil
+	if r.src.cfg.UserAttribute == "" {
+		return ldapMember{user: memberName(member)}, nil
+	}
+
+	return ldapMember{user: strings.TrimSpace(entry.GetAttributeValue(r.src.cfg.UserAttribute))}, nil
+}
+
+// fallback is the resolution of a member whose entry couldn't be fetched:
+// unresolvable when a user attribute is needed, the DN-derived name otherwise.
+func (r *memberResolver) fallback(member string) ldapMember {
+	if r.src.cfg.UserAttribute != "" {
+		return ldapMember{}
+	}
+
+	return ldapMember{user: memberName(member)}
 }

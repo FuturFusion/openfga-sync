@@ -144,6 +144,74 @@ func TestMembers(t *testing.T) {
 	}
 }
 
+func TestExpandNestedGroups(t *testing.T) {
+	t.Parallel()
+
+	src, err := NewLDAP("test", &config.LDAPSource{MemberAttribute: "member", UserTransforms: []string{"lower"}})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// admins contains a user, the devs group and (through a cycle) itself.
+	admins := &ldap.Entry{DN: "CN=admins,OU=Groups,DC=example,DC=com", Attributes: []*ldap.EntryAttribute{
+		{Name: "member", Values: []string{"CN=Alice,OU=Users,DC=example,DC=com", "CN=devs,OU=Groups,DC=example,DC=com"}},
+	}}
+
+	devs := &ldap.Entry{DN: "CN=devs,OU=Groups,DC=example,DC=com", Attributes: []*ldap.EntryAttribute{
+		{Name: "member", Values: []string{"cn=alice,OU=Users,DC=example,DC=com", "CN=Bob,OU=Users,DC=example,DC=com", "cn=admins,ou=groups,dc=example,dc=com"}},
+	}}
+
+	resolver := src.newMemberResolver(nil, []*ldap.Entry{admins, devs})
+
+	members, err := resolver.expand("admins", admins)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if !reflect.DeepEqual(members, []string{"alice", "bob"}) {
+		t.Errorf("Unexpected members: %v", members)
+	}
+
+	members, err = resolver.expand("devs", devs)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if !reflect.DeepEqual(members, []string{"alice", "bob"}) {
+		t.Errorf("Unexpected members: %v", members)
+	}
+}
+
+func TestIsGroup(t *testing.T) {
+	t.Parallel()
+
+	group := &ldap.Entry{Attributes: []*ldap.EntryAttribute{{Name: "objectClass", Values: []string{"top", "group"}}}}
+	if !isGroup(group) {
+		t.Error("Expected a group")
+	}
+
+	user := &ldap.Entry{Attributes: []*ldap.EntryAttribute{{Name: "objectClass", Values: []string{"top", "person", "user"}}}}
+	if isGroup(user) {
+		t.Error("Expected a user")
+	}
+}
+
+func TestApplyTransforms(t *testing.T) {
+	t.Parallel()
+
+	if applyTransforms(nil, "Alice") != "Alice" {
+		t.Error("Expected the name to be left alone")
+	}
+
+	if applyTransforms([]string{"lower"}, "Alice@Example.COM") != "alice@example.com" {
+		t.Error("Expected a lower case name")
+	}
+
+	if applyTransforms([]string{"lower", "upper"}, "Alice") != "ALICE" {
+		t.Error("Expected an upper case name")
+	}
+}
+
 func TestCompileRolesInvalid(t *testing.T) {
 	t.Parallel()
 

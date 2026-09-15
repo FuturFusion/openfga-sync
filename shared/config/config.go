@@ -137,6 +137,10 @@ type LDAPSource struct {
 	// GroupNameAttribute is the attribute holding the group name.
 	GroupNameAttribute string `json:"group_name_attribute" yaml:"group_name_attribute"`
 
+	// PageSize is the number of entries requested per page when
+	// searching for groups. Defaults to 1000, the AD limit.
+	PageSize int `json:"page_size" yaml:"page_size"`
+
 	// MemberAttribute is the group attribute holding its members.
 	MemberAttribute string `json:"member_attribute" yaml:"member_attribute"`
 
@@ -155,6 +159,12 @@ type LDAPSource struct {
 	// RoleTransforms are applied in order to the group name before it's
 	// matched against the group and role patterns ("lower", "upper").
 	RoleTransforms []string `json:"role_transforms" yaml:"role_transforms"`
+
+	// NestedGroups looks up the members located outside of GroupBaseDN
+	// to tell nested groups from users, at the cost of one query per
+	// member. Groups located below GroupBaseDN are always followed, as
+	// are the groups found through the UserAttribute lookup.
+	NestedGroups bool `json:"nested_groups" yaml:"nested_groups"`
 
 	// SyncRoles applies the grants of the roles below to the members of
 	// the matching groups.
@@ -463,6 +473,14 @@ func (l *LDAPSource) validate(name string) error {
 
 	if l.MemberAttribute == "" {
 		l.MemberAttribute = "member"
+	}
+
+	if l.PageSize == 0 {
+		l.PageSize = 1000
+	}
+
+	if l.PageSize < 0 {
+		return fmt.Errorf("source %q has an invalid page size %d", name, l.PageSize)
 	}
 
 	err := validateGroupPattern(name, l.GroupPattern)

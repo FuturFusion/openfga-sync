@@ -41,6 +41,8 @@ sources:
       # group_pattern: "^incus-"
       # group_name_attribute: cn
       # member_attribute: member
+      # Number of groups fetched per page (AD caps it at 1000).
+      # page_size: 1000
       # By default the user name is derived from the member DN itself
       # (first RDN value, e.g. the CN, which for AD is expected to line
       # up with the sAMAccountName), keeping the queries to a minimum.
@@ -53,6 +55,12 @@ sources:
       # Transforms applied in order to the group name before it's
       # matched against the patterns ("lower", "upper").
       # role_transforms: [lower]
+      # Groups nested into other groups are followed. Those below
+      # group_base_dn are recognized from the group listing itself;
+      # members located elsewhere are only told apart from users when
+      # looked up, which user_attribute already does. Set this to look
+      # them up otherwise, at the cost of one query per member.
+      # nested_groups: false
 
       # Apply the grants of the roles below to the members of the
       # matching groups.

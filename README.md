@@ -45,8 +45,18 @@ DN (its first RDN value, which for AD is expected to line up with the
 the cost of one query per user. Either way the resulting name must match
 what Incus sees at authentication time.
 
-Both paged group retrieval and AD ranged member retrieval
-(`member;range=...` on very large groups) are handled.
+Groups nested into other groups are followed, so their members get the
+grants of the parent group. Groups located below the base DN are
+recognized from the group listing itself at no extra cost. Members
+located elsewhere in the directory can only be told apart from users by
+looking them up, which happens when `user_attribute` is set or when
+`nested_groups: true` is set (one query per member either way).
+
+Both paged group retrieval (`page_size` entries at a time, 1000 by
+default) and AD ranged member retrieval (`member;range=...` on very large
+groups) are handled. Debug logging reports every page fetched, the
+referrals returned by the server (which aren't followed) and the groups
+skipped, to help track down missing entries.
 
 ## Rauthy
 With `sync_roles: true`, roles matching a configurable pattern are pulled
