@@ -23,6 +23,8 @@ type cmdDaemon struct {
 	flagDebug   bool
 	flagDryRun  bool
 	flagOneShot bool
+
+	level *slog.LevelVar
 }
 
 func main() {
@@ -44,8 +46,8 @@ func main() {
 	app.CompletionOptions = cobra.CompletionOptions{DisableDefaultCmd: true}
 
 	app.PersistentFlags().StringVar(&daemonCmd.flagConfig, "config", "/etc/openfga-sync/config.yml", "Path to the configuration file")
-	app.PersistentFlags().BoolVar(&daemonCmd.flagDebug, "debug", false, "Enable debug logging")
-	app.PersistentFlags().BoolVar(&daemonCmd.flagDryRun, "dry-run", false, "Only report the changes that would be made")
+	app.PersistentFlags().BoolVar(&daemonCmd.flagDebug, "debug", false, "Enable debug logging (also settable through the configuration)")
+	app.PersistentFlags().BoolVar(&daemonCmd.flagDryRun, "dry-run", false, "Only report the changes that would be made (also settable through the configuration)")
 	app.PersistentFlags().BoolVar(&daemonCmd.flagOneShot, "one-shot", false, "Run a single synchronization pass and exit")
 
 	app.SetVersionTemplate("{{.Version}}\n")
@@ -60,13 +62,9 @@ func main() {
 }
 
 func (c *cmdDaemon) run(_ *cobra.Command, _ []string) error {
-	// Set up logging.
-	level := slog.LevelInfo
-	if c.flagDebug {
-		level = slog.LevelDebug
-	}
-
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	// Set up logging, the level is adjusted when loading the configuration.
+	c.level = &slog.LevelVar{}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: c.level})))
 
 	// Load the initial configuration.
 	engine, interval, err := c.load()
@@ -125,8 +123,15 @@ func (c *cmdDaemon) load() (*syncer.Engine, time.Duration, error) {
 		return nil, 0, err
 	}
 
+	// The command line flags and the configuration both enable the modes.
+	if c.flagDebug || cfg.Daemon.Debug {
+		c.level.Set(slog.LevelDebug)
+	} else {
+		c.level.Set(slog.LevelInfo)
+	}
+
 	engine := &syncer.Engine{
-		DryRun:             c.flagDryRun,
+		DryRun:             c.flagDryRun || cfg.Daemon.DryRun,
 		Authoritative:      cfg.OpenFGA.Authoritative,
 		SkipMissingObjects: cfg.OpenFGA.SkipMissingObjects,
 	}

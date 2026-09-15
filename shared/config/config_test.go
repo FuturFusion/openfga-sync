@@ -31,6 +31,8 @@ func TestLoad(t *testing.T) {
 	path := writeConfig(t, `
 daemon:
   interval: 5m
+  debug: true
+  dry_run: true
 
 sources:
   - name: corp-ad
@@ -82,6 +84,10 @@ openfga:
 
 	if cfg.Daemon.StateDir != "/var/lib/openfga-sync" {
 		t.Errorf("Unexpected state directory: %q", cfg.Daemon.StateDir)
+	}
+
+	if !cfg.Daemon.Debug || !cfg.Daemon.DryRun {
+		t.Errorf("Unexpected daemon modes: %+v", cfg.Daemon)
 	}
 
 	if cfg.OpenFGA.Authoritative {

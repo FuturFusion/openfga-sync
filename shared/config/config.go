@@ -78,6 +78,12 @@ type Daemon struct {
 	// StateDir is where the record of managed tuples is kept, one file
 	// per store.
 	StateDir string `json:"state_dir" yaml:"state_dir"`
+
+	// Debug enables debug logging.
+	Debug bool `json:"debug" yaml:"debug"`
+
+	// DryRun only reports the changes that would be made.
+	DryRun bool `json:"dry_run" yaml:"dry_run"`
 }
 
 // Source is the configuration of a single data source.

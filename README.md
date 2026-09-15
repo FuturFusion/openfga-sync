@@ -156,8 +156,10 @@ openfga-sync --config /etc/openfga-sync/config.yml
 ```
 
 - `--one-shot` runs a single pass and exits.
-- `--dry-run` only reports the changes that would be made.
-- `--debug` enables debug logging.
+- `--dry-run` only reports the changes that would be made (or
+  `daemon.dry_run: true` in the configuration).
+- `--debug` enables debug logging (or `daemon.debug: true` in the
+  configuration).
 - `SIGHUP` triggers a configuration reload.
 
 An annotated example configuration can be found in

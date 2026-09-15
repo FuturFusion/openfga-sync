@@ -7,6 +7,12 @@ daemon:
   # (one file per store). Unused in authoritative mode.
   state_dir: /var/lib/openfga-sync
 
+  # Enable debug logging (same as --debug).
+  # debug: false
+
+  # Only report the changes that would be made (same as --dry-run).
+  # dry_run: false
+
 sources:
   # AD/LDAP source.
   #
