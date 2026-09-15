@@ -28,6 +28,9 @@ type Target struct {
 	kind      string
 	storeName string
 	client    *client.OpenFgaClient
+
+	// tuples caches the full content of the store for the pass.
+	tuples []Tuple
 }
 
 // NewInstance creates a new OpenFGA instance wrapper from its configuration.
@@ -140,54 +143,30 @@ func (t *Target) StoreName() string {
 	return t.storeName
 }
 
-// ExistingProjects returns the names of the projects present in the store,
-// based on the (server:incus, server, project:NAME) tuples managed by Incus.
-func (t *Target) ExistingProjects(ctx context.Context) (map[string]bool, error) {
-	body := client.ClientReadRequest{
-		User:     openfga.PtrString("server:incus"),
-		Relation: openfga.PtrString("server"),
-		Object:   openfga.PtrString("project:"),
-	}
-
-	tuples, err := t.read(ctx, body)
+// ExistingObjects returns the objects present in the store, based on the
+// anchor tuples maintained by Incus: every object it manages is linked to
+// its parent through a "project" or "server" relation tuple.
+func (t *Target) ExistingObjects(ctx context.Context) (map[string]bool, error) {
+	tuples, err := t.allTuples(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	projects := map[string]bool{}
-	for _, tuple := range tuples {
-		projects[objectProject(tuple.Object)] = true
-	}
-
-	return projects, nil
-}
-
-// ObjectExists checks whether an object has its anchor tuple in the store.
-// Incus links every object it manages to its parent through a "project" or
-// "server" relation tuple.
-func (t *Target) ObjectExists(ctx context.Context, object string) (bool, error) {
-	body := client.ClientReadRequest{
-		Object: openfga.PtrString(object),
-	}
-
-	tuples, err := t.read(ctx, body)
-	if err != nil {
-		return false, err
-	}
+	objects := map[string]bool{}
 
 	for _, tuple := range tuples {
 		if tuple.Relation == "project" || tuple.Relation == "server" {
-			return true, nil
+			objects[tuple.Object] = true
 		}
 	}
 
-	return false, nil
+	return objects, nil
 }
 
 // ReferencedGroups returns the names of the groups referenced as the user
 // of permission tuples in the store (the "group:NAME#member" form).
 func (t *Target) ReferencedGroups(ctx context.Context) ([]string, error) {
-	tuples, err := t.read(ctx, client.ClientReadRequest{})
+	tuples, err := t.allTuples(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +188,7 @@ func (t *Target) ReferencedGroups(ctx context.Context) ([]string, error) {
 // granted to groups (group:NAME#member) are left out as those can be
 // managed by a third party.
 func (t *Target) UserTuples(ctx context.Context) (map[Tuple]bool, error) {
-	tuples, err := t.read(ctx, client.ClientReadRequest{})
+	tuples, err := t.allTuples(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -315,6 +294,24 @@ func (t *Target) applyChunk(ctx context.Context, tuples []Tuple, deletion bool) 
 	}
 
 	return applied, errs
+}
+
+// allTuples returns every tuple of the store, read once per pass.
+func (t *Target) allTuples(ctx context.Context) ([]Tuple, error) {
+	if t.tuples != nil {
+		return t.tuples, nil
+	}
+
+	tuples, err := t.read(ctx, client.ClientReadRequest{})
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Debug("Read store tuples", slog.String("store", t.storeName), slog.Int("count", len(tuples)))
+
+	t.tuples = tuples
+
+	return tuples, nil
 }
 
 // read runs a single paginated Read query and returns the matching tuples.

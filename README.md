@@ -145,17 +145,21 @@ actually exist in each Incus store before writing, based on the object
 tuples that Incus itself maintains (e.g. `server:incus` being the `server`
 of `project:NAME`). Grants that reference objects which don't exist on a
 given cluster are then simply skipped there until a later pass where the
-objects showed up, avoiding pointless tuples. Operations Center and
-Migration Manager use flat authorization models, so no such filtering
-applies there.
+objects showed up, avoiding pointless tuples. The check is done in memory
+from the single read of the store's tuples done on each pass. Operations
+Center and Migration Manager use flat authorization models, so no such
+filtering applies there.
 
 # Ownership modes
 By default, a local state directory keeps track of every tuple written by
 `openfga-sync`, one file per store. Only tuples recorded there are ever
 deleted, so tuples managed by the applications themselves or added
-manually are never touched. In steady state no OpenFGA write traffic is
-generated at all, and the state files are only rewritten when something
-actually changed.
+manually are never touched. The record is checked against the store on
+every pass: recorded tuples that went missing (e.g. removed by Incus along
+with a deleted project, or by hand) are dropped from it and re-created
+when still wanted. In steady state no OpenFGA write traffic is generated
+at all, and the state files are only rewritten when something actually
+changed.
 
 With `authoritative: true`, `openfga-sync` instead owns the user tuples
 (`user:NAME`) within its scope: on every pass, each store's tuples are

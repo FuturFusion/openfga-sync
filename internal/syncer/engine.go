@@ -153,21 +153,15 @@ func (e *Engine) syncTarget(ctx context.Context, target *Target, grants []Grant,
 	filtered := desired
 
 	if e.SkipMissingObjects && target.Kind() == "incus" {
-		projects, err := target.ExistingProjects(ctx)
+		objects, err := target.ExistingObjects(ctx)
 		if err != nil {
 			return err
 		}
 
 		filtered = map[Tuple]bool{}
-		objectCache := map[string]bool{}
 
 		for tuple := range desired {
-			exists, err := objectExists(ctx, target, projects, objectCache, tuple.Object)
-			if err != nil {
-				return err
-			}
-
-			if !exists {
+			if !objectExists(objects, tuple.Object) {
 				slog.Debug("Skipping tuple for missing object", slog.String("store", target.StoreName()), slog.String("object", tuple.Object))
 
 				continue
@@ -210,18 +204,33 @@ func (e *Engine) syncTarget(ctx context.Context, target *Target, grants []Grant,
 	// scope, so anything unexpected gets deleted. Otherwise it's the
 	// record of the tuples openfga-sync itself wrote, so other tuples
 	// are never touched.
+	current, err := target.UserTuples(ctx)
+	if err != nil {
+		return err
+	}
+
 	var managed map[Tuple]bool
 
-	if e.Authoritative {
-		current, err := target.UserTuples(ctx)
-		if err != nil {
-			return err
-		}
+	pruned := 0
 
+	if e.Authoritative {
 		managed = e.authoritativeScope(current)
 	} else {
 		managed = map[Tuple]bool{}
+
+		// Recorded tuples that went missing from the store (e.g.
+		// removed by Incus along with their object, or by hand) are
+		// dropped from the record so they get re-created if still
+		// wanted.
 		for _, tuple := range e.State.Targets[target.StoreName()] {
+			if !current[tuple] {
+				slog.Info("Dropping managed tuple missing from store", slog.String("store", target.StoreName()), slog.String("tuple", tuple.String()))
+
+				pruned++
+
+				continue
+			}
+
 			managed[tuple] = true
 		}
 	}
@@ -241,7 +250,7 @@ func (e *Engine) syncTarget(ctx context.Context, target *Target, grants []Grant,
 		return nil
 	}
 
-	if len(writes) == 0 && len(deletes) == 0 {
+	if len(writes) == 0 && len(deletes) == 0 && pruned == 0 {
 		return nil
 	}
 
@@ -254,7 +263,9 @@ func (e *Engine) syncTarget(ctx context.Context, target *Target, grants []Grant,
 		}
 	}
 
-	slog.Info("Synchronized store", slog.String("store", target.StoreName()), slog.Int("writes", len(appliedWrites)), slog.Int("deletes", len(appliedDeletes)))
+	if len(writes) > 0 || len(deletes) > 0 {
+		slog.Info("Synchronized store", slog.String("store", target.StoreName()), slog.Int("writes", len(appliedWrites)), slog.Int("deletes", len(appliedDeletes)))
+	}
 
 	return applyErr
 }
@@ -296,41 +307,18 @@ func (e *Engine) authoritativeScope(current map[Tuple]bool) map[Tuple]bool {
 }
 
 // objectExists checks whether the object referenced by a tuple exists on the
-// target, using the object tuples managed by Incus itself.
-func objectExists(ctx context.Context, target *Target, projects map[string]bool, cache map[string]bool, object string) (bool, error) {
+// target, using the objects found through the anchor tuples managed by Incus
+// itself.
+func objectExists(objects map[string]bool, object string) bool {
 	objType := objectType(object)
 
 	// The server object always exists and groups/users have no anchor
 	// tuples to check for.
 	if objType == "server" || objType == "group" || objType == "user" {
-		return true, nil
+		return true
 	}
 
-	// Projects are checked against the project list.
-	if objType == "project" {
-		return projects[objectProject(object)], nil
-	}
-
-	// Any other project-scoped object first gets its project checked.
-	project := objectProject(object)
-	if project != "" && !projects[project] {
-		return false, nil
-	}
-
-	// Then the object itself is checked for its anchor tuple.
-	exists, ok := cache[object]
-	if ok {
-		return exists, nil
-	}
-
-	exists, err := target.ObjectExists(ctx, object)
-	if err != nil {
-		return false, err
-	}
-
-	cache[object] = exists
-
-	return exists, nil
+	return objects[object]
 }
 
 // computeChanges compares the desired tuples with the managed ones: new

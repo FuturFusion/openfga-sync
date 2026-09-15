@@ -113,23 +113,20 @@ func TestComputeManaged(t *testing.T) {
 	}
 }
 
-func TestObjectProject(t *testing.T) {
+func TestObjectExists(t *testing.T) {
 	t.Parallel()
 
-	cases := map[string]string{
-		"project:default":                      "default",
-		"project:app-1234-stg":                 "app-1234-stg",
-		"instance:default/c1":                  "default",
-		"storage_volume:foo/local/custom/vol1": "foo",
-		"server:incus":                         "",
-		"certificate:abcdef":                   "",
-		"user:alice@example.com":               "",
+	objects := map[string]bool{"project:app": true, "instance:app/vm01": true}
+
+	for _, object := range []string{"server:incus", "group:admins", "user:alice", "project:app", "instance:app/vm01"} {
+		if !objectExists(objects, object) {
+			t.Errorf("Expected %q to exist", object)
+		}
 	}
 
-	for object, expected := range cases {
-		project := objectProject(object)
-		if project != expected {
-			t.Errorf("Unexpected project for %q: %q", object, project)
+	for _, object := range []string{"project:other", "instance:app/vm02", "storage_pool:local"} {
+		if objectExists(objects, object) {
+			t.Errorf("Expected %q to be missing", object)
 		}
 	}
 }

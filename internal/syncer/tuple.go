@@ -85,27 +85,6 @@ func objectType(object string) string {
 	return t
 }
 
-// objectProject returns the project an object belongs to, if any.
-// Incus places the project name as the first path element of all
-// project-scoped objects.
-func objectProject(object string) string {
-	objType, id, _ := strings.Cut(object, ":")
-
-	switch objType {
-	case "server", "certificate", "storage_pool", "network_integration", "user", "group":
-		// Server-scoped object types.
-		return ""
-
-	case "project":
-		return unescape(id)
-
-	default:
-		element, _, _ := strings.Cut(id, "/")
-
-		return unescape(element)
-	}
-}
-
 // escape replaces forward slashes with their URL encoding.
 func escape(s string) string {
 	return strings.ReplaceAll(s, "/", "%2F")
