@@ -150,6 +150,13 @@ from the single read of the store's tuples done on each pass. Operations
 Center and Migration Manager use flat authorization models, so no such
 filtering applies there.
 
+With the check enabled, grant objects can also contain `*` wildcards,
+each matching a single path element (anything but `/`) of the objects
+found in the store. For example `instance:*/${1}` for the `^i[0-9]+$`
+pattern grants access to the instance named after the group in whichever
+project holds it, expanding to every match when the name exists in
+several projects. Wildcards only apply to Incus stores.
+
 # Ownership modes
 By default, a local state directory keeps track of every tuple written by
 `openfga-sync`, one file per store. Only tuples recorded there are ever

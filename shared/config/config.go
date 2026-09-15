@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"go.yaml.in/yaml/v4"
@@ -429,7 +430,34 @@ func (c *Config) Validate() error {
 		return errors.New("the OpenFGA URL must be configured")
 	}
 
+	// Wildcard objects expand against the objects found in the stores.
+	if !c.OpenFGA.SkipMissingObjects {
+		for _, src := range c.Sources {
+			for _, role := range src.roles() {
+				for _, grant := range role.Grants {
+					if strings.Contains(grant.Object, "*") {
+						return fmt.Errorf("source %q has a grant with wildcard object %q, this requires skip_missing_objects", src.Name, grant.Object)
+					}
+				}
+			}
+		}
+	}
+
 	return nil
+}
+
+// roles returns the roles defined in the configuration of the source.
+func (s *Source) roles() []Role {
+	switch {
+	case s.LDAP != nil:
+		return s.LDAP.Roles
+
+	case s.Zitadel != nil:
+		return s.Zitadel.Roles
+
+	default:
+		return nil
+	}
 }
 
 func (l *LDAPSource) validate(name string) error {
@@ -568,6 +596,10 @@ func validateRoles(name string, roles []Role) error {
 				} else {
 					grant.Object = ServerObjects[grant.Type]
 				}
+			}
+
+			if grant.Type != "incus" && strings.Contains(grant.Object, "*") {
+				return fmt.Errorf("source %q has a grant with wildcard object %q, only supported on Incus", name, grant.Object)
 			}
 		}
 	}

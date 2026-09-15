@@ -131,6 +131,34 @@ func TestObjectExists(t *testing.T) {
 	}
 }
 
+func TestMatchObjects(t *testing.T) {
+	t.Parallel()
+
+	objects := map[string]bool{
+		"project:foo":           true,
+		"project:bar":           true,
+		"instance:foo/i12345":   true,
+		"instance:bar/i12345":   true,
+		"instance:bar/i12346":   true,
+		"instance:foo/x/i12345": true,
+	}
+
+	matches := matchObjects(objects, "instance:*/i12345")
+	if !reflect.DeepEqual(matches, []string{"instance:bar/i12345", "instance:foo/i12345"}) {
+		t.Errorf("Unexpected matches: %v", matches)
+	}
+
+	matches = matchObjects(objects, "instance:bar/*")
+	if !reflect.DeepEqual(matches, []string{"instance:bar/i12345", "instance:bar/i12346"}) {
+		t.Errorf("Unexpected matches: %v", matches)
+	}
+
+	matches = matchObjects(objects, "instance:*/i99999")
+	if len(matches) != 0 {
+		t.Errorf("Unexpected matches: %v", matches)
+	}
+}
+
 func TestObjectUser(t *testing.T) {
 	t.Parallel()
 

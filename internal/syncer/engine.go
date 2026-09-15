@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -73,6 +74,15 @@ func (e *Engine) Sync(ctx context.Context) error {
 			err := grant.Validate()
 			if err != nil {
 				slog.Warn("Skipping invalid grant", slog.String("source", src.Name()), slog.Any("error", err))
+
+				continue
+			}
+
+			// Wildcards expand against the objects found in the store,
+			// which is only known for Incus stores with the object
+			// existence check enabled.
+			if strings.Contains(grant.Object, "*") && (!e.SkipMissingObjects || grant.Kind != "incus") {
+				slog.Warn("Skipping grant with wildcard object, this requires skip_missing_objects on an Incus store", slog.String("source", src.Name()), slog.String("object", grant.Object))
 
 				continue
 			}
@@ -161,6 +171,15 @@ func (e *Engine) syncTarget(ctx context.Context, target *Target, grants []Grant,
 		filtered = map[Tuple]bool{}
 
 		for tuple := range desired {
+			// Wildcards expand to every matching object in the store.
+			if strings.Contains(tuple.Object, "*") {
+				for _, object := range matchObjects(objects, tuple.Object) {
+					filtered[Tuple{User: tuple.User, Relation: tuple.Relation, Object: object}] = true
+				}
+
+				continue
+			}
+
 			if !objectExists(objects, tuple.Object) {
 				slog.Debug("Skipping tuple for missing object", slog.String("store", target.StoreName()), slog.String("object", tuple.Object))
 
@@ -319,6 +338,29 @@ func objectExists(objects map[string]bool, object string) bool {
 	}
 
 	return objects[object]
+}
+
+// matchObjects returns the objects matching a pattern where "*" stands for
+// any single path element (anything but "/"), sorted.
+func matchObjects(objects map[string]bool, pattern string) []string {
+	parts := strings.Split(pattern, "*")
+	for i, part := range parts {
+		parts[i] = regexp.QuoteMeta(part)
+	}
+
+	matcher := regexp.MustCompile("^" + strings.Join(parts, "[^/]*") + "$")
+
+	matches := []string{}
+
+	for object := range objects {
+		if matcher.MatchString(object) {
+			matches = append(matches, object)
+		}
+	}
+
+	slices.Sort(matches)
+
+	return matches
 }
 
 // computeChanges compares the desired tuples with the managed ones: new

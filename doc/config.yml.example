@@ -89,6 +89,15 @@ sources:
             - relation: "${role}"
               object: "project:${project}"
 
+        # With skip_missing_objects enabled, "*" in the object matches
+        # a single path element of the objects found in the store:
+        # membership of an i12345 group grants "user" on the i12345
+        # instance of whichever project holds it.
+        # - pattern: "^(i[0-9]+)$"
+        #   grants:
+        #     - relation: user
+        #       object: "instance:*/${1}"
+
         # Grants can be scoped to other applications and to specific
         # deployments (target names). The object then defaults to the
         # application's server object (here server:migration-manager).

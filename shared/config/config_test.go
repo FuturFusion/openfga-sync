@@ -285,6 +285,40 @@ sources:
 openfga:
   url: http://127.0.0.1:8080
 `,
+		"wildcard without skip_missing_objects": `
+sources:
+  - name: corp-ad
+    type: ldap
+    ldap:
+      url: ldaps://ad.example.com
+      group_base_dn: OU=Incus,DC=example,DC=com
+      sync_roles: true
+      roles:
+        - pattern: "^(.+)$"
+          grants:
+            - relation: user
+              object: "instance:*/${1}"
+openfga:
+  url: http://127.0.0.1:8080
+`,
+		"wildcard on non-incus": `
+sources:
+  - name: corp-ad
+    type: ldap
+    ldap:
+      url: ldaps://ad.example.com
+      group_base_dn: OU=Incus,DC=example,DC=com
+      sync_roles: true
+      roles:
+        - pattern: "^(.+)$"
+          grants:
+            - relation: user
+              type: operations-center
+              object: "server:*"
+openfga:
+  url: http://127.0.0.1:8080
+  skip_missing_objects: true
+`,
 		"ldap bad url scheme": `
 sources:
   - name: corp-ad
