@@ -48,6 +48,11 @@ sources:
       # that attribute, at the cost of one query per user, e.g. for
       # OIDC logins where Incus identifies users by e-mail address:
       # user_attribute: mail
+      # Transforms applied in order to the user name ("lower", "upper").
+      # user_transforms: [lower]
+      # Transforms applied in order to the group name before it's
+      # matched against the patterns ("lower", "upper").
+      # role_transforms: [lower]
 
       # Apply the grants of the roles below to the members of the
       # matching groups.
@@ -113,6 +118,8 @@ sources:
       # group_pattern: "^incus-"
       # insecure_skip_verify: false
       # ca_certificate: /etc/openfga-sync/sso-ca.pem
+      # Transforms applied in order to the user name ("lower", "upper").
+      # user_transforms: [lower]
 
       # Apply the grants defined in the metadata of the matching roles
       # to every user holding them.
@@ -146,6 +153,11 @@ sources:
       # or "id" (the user ID, matching the OIDC sub claim). It must
       # line up with what Incus sees at authentication time.
       # user_field: email
+      # Transforms applied in order to the user name ("lower", "upper").
+      # user_transforms: [lower]
+      # Transforms applied in order to the role key before it's matched
+      # against the patterns ("lower", "upper").
+      # role_transforms: [lower]
 
       # Apply the grants of the roles below to the users holding the
       # matching Zitadel roles.

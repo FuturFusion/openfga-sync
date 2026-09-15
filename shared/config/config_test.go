@@ -43,6 +43,8 @@ sources:
       bind_dn: CN=svc,DC=example,DC=com
       bind_password: secret
       group_base_dn: OU=Incus,DC=example,DC=com
+      user_transforms: [lower]
+      role_transforms: [lower]
       sync_roles: true
       roles:
         - pattern: "^(.+)-admin$"
@@ -105,6 +107,10 @@ openfga:
 
 	if ldap.GroupFilter != "(objectClass=group)" || ldap.GroupNameAttribute != "cn" || ldap.MemberAttribute != "member" {
 		t.Errorf("Unexpected LDAP defaults: %+v", ldap)
+	}
+
+	if !reflect.DeepEqual(ldap.UserTransforms, []string{"lower"}) || !reflect.DeepEqual(ldap.RoleTransforms, []string{"lower"}) {
+		t.Errorf("Unexpected LDAP options: %+v", ldap)
 	}
 
 	if ldap.Roles[0].Grants[0].Object != "project:${1}" {
@@ -238,6 +244,30 @@ sources:
       url: ldaps://ad.example.com
       group_base_dn: OU=Incus,DC=example,DC=com
       group_pattern: "(["
+      sync_groups: true
+openfga:
+  url: http://127.0.0.1:8080
+`,
+		"ldap bad user transform": `
+sources:
+  - name: corp-ad
+    type: ldap
+    ldap:
+      url: ldaps://ad.example.com
+      group_base_dn: OU=Incus,DC=example,DC=com
+      user_transforms: [title]
+      sync_groups: true
+openfga:
+  url: http://127.0.0.1:8080
+`,
+		"ldap bad role transform": `
+sources:
+  - name: corp-ad
+    type: ldap
+    ldap:
+      url: ldaps://ad.example.com
+      group_base_dn: OU=Incus,DC=example,DC=com
+      role_transforms: [title]
       sync_groups: true
 openfga:
   url: http://127.0.0.1:8080

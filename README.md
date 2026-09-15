@@ -106,6 +106,18 @@ holding a role that includes the `user.grant.read` permission.
 Zitadel doesn't support user groups in current releases, so there is no
 `sync_groups` mode for this source yet.
 
+## Name transforms
+Every source ends up with a user name that must match what the
+application sees at authentication time. When the identity provider and
+the application disagree on the case of the name, `user_transforms` lists
+the transforms applied in order to the user name before it's used in the
+tuples: `lower` and `upper`.
+
+Similarly, `role_transforms` applies the same kind of transforms to the
+LDAP group name or Zitadel role key before it's matched against the
+patterns, e.g. to turn an `I12345` group into the `i12345` instance name
+through a `lower` transform.
+
 # Targets
 All the applications share a single OpenFGA instance, with one store per
 application deployment (an Incus server or cluster, an Operations Center

@@ -148,6 +148,14 @@ type LDAPSource struct {
 	// otherwise (e.g. memberUid on posixGroup).
 	UserAttribute string `json:"user_attribute" yaml:"user_attribute"`
 
+	// UserTransforms are applied in order to the user name before it's
+	// used in the tuples ("lower", "upper").
+	UserTransforms []string `json:"user_transforms" yaml:"user_transforms"`
+
+	// RoleTransforms are applied in order to the group name before it's
+	// matched against the group and role patterns ("lower", "upper").
+	RoleTransforms []string `json:"role_transforms" yaml:"role_transforms"`
+
 	// SyncRoles applies the grants of the roles below to the members of
 	// the matching groups.
 	SyncRoles bool `json:"sync_roles" yaml:"sync_roles"`
@@ -217,6 +225,10 @@ type RauthySource struct {
 	// authoritative mode, their membership is left alone.
 	GroupPattern string `json:"group_pattern" yaml:"group_pattern"`
 
+	// UserTransforms are applied in order to the user name before it's
+	// used in the tuples ("lower", "upper").
+	UserTransforms []string `json:"user_transforms" yaml:"user_transforms"`
+
 	// SyncRoles pulls the roles matching RolePattern and applies the
 	// OpenFGA grants defined in their metadata to every user holding
 	// them.
@@ -254,6 +266,14 @@ type ZitadelSource struct {
 	// matching the OIDC subject).
 	UserField string `json:"user_field" yaml:"user_field"`
 
+	// UserTransforms are applied in order to the user name before it's
+	// used in the tuples ("lower", "upper").
+	UserTransforms []string `json:"user_transforms" yaml:"user_transforms"`
+
+	// RoleTransforms are applied in order to the role key before it's
+	// matched against the role patterns ("lower", "upper").
+	RoleTransforms []string `json:"role_transforms" yaml:"role_transforms"`
+
 	// SyncRoles applies the grants of the roles below to the users
 	// holding the matching Zitadel roles.
 	SyncRoles bool `json:"sync_roles" yaml:"sync_roles"`
@@ -261,6 +281,9 @@ type ZitadelSource struct {
 	// Roles translate Zitadel role keys into sets of OpenFGA grants.
 	Roles []Role `json:"roles" yaml:"roles"`
 }
+
+// Transforms are the supported name transforms.
+var Transforms = []string{"lower", "upper"}
 
 // ApplicationKinds are the types of applications a target can be.
 var ApplicationKinds = []string{"incus", "operations-center", "migration-manager"}
@@ -447,6 +470,11 @@ func (l *LDAPSource) validate(name string) error {
 		return err
 	}
 
+	err = validateTransforms(name, slices.Concat(l.UserTransforms, l.RoleTransforms))
+	if err != nil {
+		return err
+	}
+
 	if !l.SyncRoles && !l.SyncGroups {
 		return fmt.Errorf("source %q must enable at least one of sync_roles and sync_groups", name)
 	}
@@ -467,6 +495,17 @@ func validateGroupPattern(name string, pattern string) error {
 	_, err := regexp.Compile(pattern)
 	if err != nil {
 		return fmt.Errorf("source %q has an invalid group pattern %q: %w", name, pattern, err)
+	}
+
+	return nil
+}
+
+// validateTransforms checks the name transforms of a source.
+func validateTransforms(name string, transforms []string) error {
+	for _, transform := range transforms {
+		if !slices.Contains(Transforms, transform) {
+			return fmt.Errorf("source %q has unsupported transform %q", name, transform)
+		}
 	}
 
 	return nil
@@ -539,6 +578,11 @@ func (r *RauthySource) validate(name string) error {
 		return err
 	}
 
+	err = validateTransforms(name, r.UserTransforms)
+	if err != nil {
+		return err
+	}
+
 	if !r.SyncRoles && !r.SyncGroups {
 		return fmt.Errorf("source %q must enable at least one of sync_roles and sync_groups", name)
 	}
@@ -561,6 +605,11 @@ func (z *ZitadelSource) validate(name string) error {
 
 	if !slices.Contains([]string{"email", "login_name", "id"}, z.UserField) {
 		return fmt.Errorf("source %q has unsupported user field %q", name, z.UserField)
+	}
+
+	err := validateTransforms(name, slices.Concat(z.UserTransforms, z.RoleTransforms))
+	if err != nil {
+		return err
 	}
 
 	if !z.SyncRoles {

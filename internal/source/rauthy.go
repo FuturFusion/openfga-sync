@@ -202,7 +202,7 @@ func (r *Rauthy) Grants(ctx context.Context) ([]syncer.Grant, error) {
 
 		for _, role := range details.Roles {
 			for _, grant := range roleGrants[role] {
-				grant.User = syncer.ObjectUser(details.Email)
+				grant.User = syncer.ObjectUser(applyTransforms(r.cfg.UserTransforms, details.Email))
 				grants = append(grants, grant)
 			}
 		}
@@ -255,7 +255,7 @@ func (r *Rauthy) Groups(ctx context.Context) (map[string][]string, error) {
 		for _, group := range details.Groups {
 			_, ok := membership[group]
 			if ok {
-				membership[group] = append(membership[group], details.Email)
+				membership[group] = append(membership[group], applyTransforms(r.cfg.UserTransforms, details.Email))
 			}
 		}
 	}

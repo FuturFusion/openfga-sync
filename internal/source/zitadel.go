@@ -126,9 +126,11 @@ func (z *Zitadel) Grants(ctx context.Context) ([]syncer.Grant, error) {
 		}
 
 		for _, role := range auth.Roles {
-			roleGrants := mapName(roles, role.Key)
+			roleKey := applyTransforms(z.cfg.RoleTransforms, role.Key)
+
+			roleGrants := mapName(roles, roleKey)
 			if len(roleGrants) == 0 {
-				slog.Debug("Role doesn't match any pattern", slog.String("source", z.name), slog.String("role", role.Key))
+				slog.Debug("Role doesn't match any pattern", slog.String("source", z.name), slog.String("role", roleKey))
 
 				continue
 			}
@@ -145,7 +147,7 @@ func (z *Zitadel) Grants(ctx context.Context) ([]syncer.Grant, error) {
 			}
 
 			for _, grant := range roleGrants {
-				grant.User = syncer.ObjectUser(userName)
+				grant.User = syncer.ObjectUser(applyTransforms(z.cfg.UserTransforms, userName))
 				grants = append(grants, grant)
 			}
 		}
