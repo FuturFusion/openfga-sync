@@ -161,6 +161,7 @@ openfga-sync --config /etc/openfga-sync/config.yml
 - `--debug` enables debug logging (or `daemon.debug: true` in the
   configuration).
 - `SIGHUP` triggers a configuration reload.
+- `SIGUSR1` triggers an immediate synchronization pass.
 
 An annotated example configuration can be found in
 [doc/config.yml.example](doc/config.yml.example).

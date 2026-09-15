@@ -79,6 +79,9 @@ func (c *cmdDaemon) run(_ *cobra.Command, _ []string) error {
 	reload := make(chan os.Signal, 1)
 	signal.Notify(reload, syscall.SIGHUP)
 
+	trigger := make(chan os.Signal, 1)
+	signal.Notify(trigger, syscall.SIGUSR1)
+
 	// Run the synchronization loop.
 	for {
 		err := engine.Sync(ctx)
@@ -110,6 +113,9 @@ func (c *cmdDaemon) run(_ *cobra.Command, _ []string) error {
 
 			engine = newEngine
 			interval = newInterval
+
+		case <-trigger:
+			slog.Info("Triggering synchronization")
 
 		case <-time.After(interval):
 		}
