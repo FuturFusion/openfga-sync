@@ -4,7 +4,8 @@ daemon:
   interval: 15m
 
   # Where to keep track of the tuples written by openfga-sync
-  # (one file per store). Unused in authoritative mode.
+  # (one file per store, unused in authoritative mode) and of the time
+  # of the last successful synchronization (last-sync).
   state_dir: /var/lib/openfga-sync
 
   # Enable debug logging (same as --debug).

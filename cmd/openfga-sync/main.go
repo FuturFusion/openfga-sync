@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -24,7 +25,8 @@ type cmdDaemon struct {
 	flagDryRun  bool
 	flagOneShot bool
 
-	level *slog.LevelVar
+	level    *slog.LevelVar
+	stateDir string
 }
 
 func main() {
@@ -91,6 +93,11 @@ func (c *cmdDaemon) run(_ *cobra.Command, _ []string) error {
 			}
 
 			slog.Error("Synchronization failed", slog.Any("error", err))
+		} else if !engine.DryRun {
+			err := c.recordSync()
+			if err != nil {
+				slog.Warn("Failed to record the synchronization time", slog.Any("error", err))
+			}
 		}
 
 		if c.flagOneShot {
@@ -120,6 +127,16 @@ func (c *cmdDaemon) run(_ *cobra.Command, _ []string) error {
 		case <-time.After(interval):
 		}
 	}
+}
+
+// recordSync writes the time of the last successful synchronization to the state directory.
+func (c *cmdDaemon) recordSync() error {
+	err := os.MkdirAll(c.stateDir, 0o700)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filepath.Join(c.stateDir, "last-sync"), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600)
 }
 
 // load parses the configuration and assembles the synchronization engine.
@@ -198,6 +215,7 @@ func (c *cmdDaemon) load() (*syncer.Engine, time.Duration, error) {
 	}
 
 	engine.Instance = syncer.NewInstance(&cfg.OpenFGA)
+	c.stateDir = cfg.Daemon.StateDir
 
 	return engine, time.Duration(cfg.Daemon.Interval), nil
 }
