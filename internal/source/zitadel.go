@@ -14,6 +14,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/FuturFusion/openfga-sync/internal/httpclient"
 	"github.com/FuturFusion/openfga-sync/internal/syncer"
 	"github.com/FuturFusion/openfga-sync/shared/config"
 )
@@ -88,13 +89,9 @@ func NewZitadel(name string, cfg *config.ZitadelSource) (*Zitadel, error) {
 	}
 
 	return &Zitadel{
-		name: name,
-		cfg:  cfg,
-		client: &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: tlsConfig,
-			},
-		},
+		name:     name,
+		cfg:      cfg,
+		client:   httpclient.New(tlsConfig),
 		pageSize: zitadelPageSize,
 	}, nil
 }
