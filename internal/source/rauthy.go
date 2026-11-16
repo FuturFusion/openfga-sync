@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/FuturFusion/openfga-sync/internal/httpclient"
 	"github.com/FuturFusion/openfga-sync/internal/syncer"
 	"github.com/FuturFusion/openfga-sync/shared/config"
 )
@@ -111,13 +112,9 @@ func NewRauthy(name string, cfg *config.RauthySource) (*Rauthy, error) {
 	}
 
 	return &Rauthy{
-		name: name,
-		cfg:  cfg,
-		client: &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: tlsConfig,
-			},
-		},
+		name:         name,
+		cfg:          cfg,
+		client:       httpclient.New(tlsConfig),
 		groupPattern: groupPattern,
 	}, nil
 }

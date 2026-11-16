@@ -14,12 +14,16 @@ import (
 	"github.com/openfga/go-sdk/client"
 	"github.com/openfga/go-sdk/credentials"
 
+	"github.com/FuturFusion/openfga-sync/internal/httpclient"
 	"github.com/FuturFusion/openfga-sync/shared/config"
 )
 
 // Instance wraps the OpenFGA instance hosting the stores to synchronize.
 type Instance struct {
 	cfg *config.OpenFGA
+
+	// httpClient is shared by all store clients so connections get reused.
+	httpClient *http.Client
 }
 
 // Target wraps a single OpenFGA store to synchronize.
@@ -35,8 +39,16 @@ type Target struct {
 
 // NewInstance creates a new OpenFGA instance wrapper from its configuration.
 func NewInstance(cfg *config.OpenFGA) *Instance {
+	var tlsConfig *tls.Config
+	if cfg.InsecureSkipVerify {
+		tlsConfig = &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // Explicit configuration option.
+		}
+	}
+
 	return &Instance{
-		cfg: cfg,
+		cfg:        cfg,
+		httpClient: httpclient.New(tlsConfig),
 	}
 }
 
@@ -96,18 +108,9 @@ func (i *Instance) Targets(ctx context.Context) ([]*Target, error) {
 // newClient creates an OpenFGA API client for the given store.
 func (i *Instance) newClient(storeID string) (*client.OpenFgaClient, error) {
 	conf := client.ClientConfiguration{
-		ApiUrl:  i.cfg.URL,
-		StoreId: storeID,
-	}
-
-	if i.cfg.InsecureSkipVerify {
-		conf.HTTPClient = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true, //nolint:gosec // Explicit configuration option.
-				},
-			},
-		}
+		ApiUrl:     i.cfg.URL,
+		StoreId:    storeID,
+		HTTPClient: i.httpClient,
 	}
 
 	if i.cfg.APIToken != "" {
