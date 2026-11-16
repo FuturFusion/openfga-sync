@@ -7,11 +7,13 @@ linters:
     - depguard
     - err113
     - exhaustruct
+    - exhaustruct_v5
     - funlen # handled by revive
     - gochecknoglobals
     - gocognit
     - goconst
     - gocyclo
+    - gomodguard # replaced by gomodguard_v2
     - ireturn
     - lll
     - maintidx
@@ -39,6 +41,11 @@ linters:
       config:
         G301: "0755"
         G306: "0644"
+
+    recvcheck:
+      exclusions:
+        - "*.MarshalJSON"
+        - "*.MarshalYAML"
 
     nestif:
       min-complexity: 8
